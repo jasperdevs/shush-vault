@@ -159,7 +159,8 @@ namespace ShushVault.Windows.Views
             var package = new DataPackage();
             package.SetText(record.Value);
             Clipboard.SetContent(package);
-            StatusText.Text = $"Copied {record.Name}.";
+            _ = ClearClipboardLaterAsync(record.Value);
+            StatusText.Text = $"Copied {record.Name}. Clipboard clears in 30s.";
         }
 
         private async void OnChooseEnvClicked(object sender, RoutedEventArgs e)
@@ -219,10 +220,12 @@ namespace ShushVault.Windows.Views
 
             var visibleIds = Secrets.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
             var visibleRecords = allRecords.Where(record => visibleIds.Contains(record.Id)).ToList();
+            var exported = vaultService.ExportEnv(visibleRecords);
             var package = new DataPackage();
-            package.SetText(vaultService.ExportEnv(visibleRecords));
+            package.SetText(exported);
             Clipboard.SetContent(package);
-            StatusText.Text = "Copied visible secrets as .env.";
+            _ = ClearClipboardLaterAsync(exported);
+            StatusText.Text = "Copied visible secrets as .env. Clipboard clears in 30s.";
         }
 
         private void OnEnvImportTextChanged(object sender, TextChangedEventArgs e)
@@ -291,6 +294,7 @@ namespace ShushVault.Windows.Views
             try
             {
                 vaultService.Unlock(PassphraseBox.Password);
+                PassphraseBox.Password = string.Empty;
                 return true;
             }
             catch (ArgumentException ex)
@@ -298,6 +302,24 @@ namespace ShushVault.Windows.Views
                 StatusText.Text = ex.Message;
                 return false;
             }
+        }
+
+        private static async Task ClearClipboardLaterAsync(string expectedText)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            var content = Clipboard.GetContent();
+            if (!content.Contains(StandardDataFormats.Text))
+            {
+                return;
+            }
+
+            var current = await content.GetTextAsync();
+            if (current != expectedText)
+            {
+                return;
+            }
+
+            Clipboard.SetContent(new DataPackage());
         }
 
         private string SelectedEnvironment()

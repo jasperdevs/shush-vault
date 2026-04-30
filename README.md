@@ -92,8 +92,8 @@
     </tr>
     <tr>
       <td>Key handling</td>
-      <td>OS keychain plus passphrase fallback</td>
-      <td>Use native secure storage where available, while still supporting portable vault unlocks.</td>
+      <td>Passphrase unlock</td>
+      <td>Interactive hidden prompts are preferred. CLI env/argument passphrases are automation paths.</td>
     </tr>
   </table>
 
@@ -128,8 +128,7 @@
 
   <h2>starter CLI shape</h2>
 
-  <pre><code>$env:SHUSH_VAULT_PASSPHRASE="change-me"
-shush init
+  <pre><code>shush init
 shush add OPENAI_API_KEY sk-... --workspace my-app --env Dev
 shush list --workspace my-app --env Dev --search openai
 shush get OPENAI_API_KEY --workspace my-app --env Dev
@@ -137,8 +136,10 @@ shush update OPENAI_API_KEY --workspace my-app --env Dev --value sk-new...
 shush copy OPENAI_API_KEY --workspace my-app --env Dev
 shush import .env --workspace my-app --env Dev --preview
 shush import .env --workspace my-app --env Dev --conflict overwrite
-shush export --workspace my-app --env Dev
+shush export --workspace my-app --env Dev --stdout
 shush delete OPENAI_API_KEY --workspace my-app --env Dev</code></pre>
+
+  <p><code>copy</code> and <code>export</code> expose plaintext by design. Clipboard copies clear after 30 seconds by default, and export requires <code>--stdout</code> or <code>--output</code>.</p>
 
   <p>MIT</p>
 </div>

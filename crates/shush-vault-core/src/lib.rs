@@ -212,6 +212,7 @@ pub fn encrypt_vault(vault: &Vault, passphrase: &str) -> Result<EncryptedVault, 
 pub fn decrypt_vault(encrypted: &EncryptedVault, passphrase: &str) -> Result<Vault, VaultError> {
     if encrypted.version != FORMAT_VERSION
         || encrypted.kdf != KDF_NAME
+        || encrypted.iterations != KDF_ITERATIONS
         || encrypted.cipher != CIPHER_NAME
     {
         return Err(VaultError::InvalidPayload);
@@ -287,6 +288,24 @@ mod tests {
         assert!(matches!(
             decrypt_vault(&encrypted, "wrong"),
             Err(VaultError::DecryptionFailed)
+        ));
+    }
+
+    #[test]
+    fn rejects_unsupported_iteration_count_before_pbkdf() {
+        let encrypted = EncryptedVault {
+            version: FORMAT_VERSION,
+            kdf: KDF_NAME.to_owned(),
+            iterations: KDF_ITERATIONS + 1,
+            cipher: CIPHER_NAME.to_owned(),
+            salt: STANDARD.encode([0_u8; SALT_LEN]),
+            nonce: STANDARD.encode([0_u8; NONCE_LEN]),
+            ciphertext: STANDARD.encode([0_u8; KEY_LEN]),
+        };
+
+        assert!(matches!(
+            decrypt_vault(&encrypted, "passphrase"),
+            Err(VaultError::InvalidPayload)
         ));
     }
 

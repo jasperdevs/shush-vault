@@ -135,7 +135,7 @@ final class VaultStore: ObservableObject {
         guard encrypted.version == formatVersion,
               encrypted.kdf == kdfName,
               encrypted.cipher == cipherName,
-              encrypted.iterations > 0,
+              encrypted.iterations == kdfIterations,
               let salt = Data(base64Encoded: encrypted.salt),
               let nonce = Data(base64Encoded: encrypted.nonce),
               let payload = Data(base64Encoded: encrypted.ciphertext),
@@ -218,5 +218,5 @@ private func pbkdf2SHA256(passphrase: String, salt: Data, iterations: Int) -> Da
         blockIndex += 1
     }
 
-        return Data(derived.prefix(keyLength))
+    return Data(derived.prefix(keyLength))
 }

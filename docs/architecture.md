@@ -55,3 +55,11 @@ Windows packaging uses Velopack. The packaging script builds the app and produce
 ```
 
 GitHub release upload should be added only after the app is ready for public release.
+
+## Security notes
+
+The vault format supports exactly one KDF profile for version 1: PBKDF2-SHA256 with 310,000 iterations and AES-256-GCM. Readers reject unsupported KDF, cipher, version, and iteration values before deriving keys.
+
+CLI passphrases should be entered through the hidden prompt for normal use. `--passphrase` and `SHUSH_VAULT_PASSPHRASE` exist for automation and are easier to leak through shell history, process metadata, or environment dumps.
+
+Copy and export operations produce plaintext. Clipboard copy paths clear the clipboard after a short TTL when the clipboard still contains the copied value. CLI export requires `--stdout` or `--output` so plaintext output is explicit.

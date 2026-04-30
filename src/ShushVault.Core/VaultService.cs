@@ -46,6 +46,9 @@ public sealed class VaultService
         passphrase = value;
     }
 
+    public void Lock()
+        => passphrase = null;
+
     public async Task<IReadOnlyList<SecretRecord>> LoadAsync(CancellationToken cancellationToken = default)
     {
         if (!File.Exists(filePath))
@@ -246,7 +249,7 @@ public sealed class VaultService
 
     private static byte[] Decrypt(VaultEnvelope envelope, string passphrase)
     {
-        if (envelope is not { Version: 1, Kdf: KdfName, Cipher: CipherName } || envelope.Iterations <= 0)
+        if (envelope is not { Version: 1, Kdf: KdfName, Iterations: KdfIterations, Cipher: CipherName })
         {
             throw new CryptographicException("Unsupported vault format.");
         }

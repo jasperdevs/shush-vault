@@ -20,6 +20,7 @@ struct ContentView: View {
                 SecureField("Vault passphrase", text: $passphrase)
                 Button("Unlock") {
                     store.unlock(passphrase: passphrase)
+                    passphrase = ""
                 }
 
                 TextField("Workspace", text: $workspace)

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using ShushVault.Core;
 
 namespace ShushVault.Core.Tests;
@@ -49,5 +50,26 @@ public sealed class VaultServiceTests
         catch (System.Security.Cryptography.CryptographicException)
         {
         }
+    }
+
+    [TestMethod]
+    public async Task LoadAsyncRejectsUnsupportedIterationCountBeforePbkdf()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ShushVault.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var envelope = new VaultEnvelope(
+            1,
+            "pbkdf2-sha256",
+            310_001,
+            "aes-256-gcm",
+            Convert.ToBase64String(new byte[16]),
+            Convert.ToBase64String(new byte[12]),
+            Convert.ToBase64String(new byte[32]));
+        await File.WriteAllTextAsync(Path.Combine(root, "vault.shush"), JsonSerializer.Serialize(envelope));
+
+        var service = new VaultService(root);
+        service.Unlock("passphrase");
+
+        await Assert.ThrowsExceptionAsync<System.Security.Cryptography.CryptographicException>(() => service.LoadAsync());
     }
 }

@@ -1,9 +1,12 @@
 use std::fs;
 use std::path::PathBuf;
+use std::thread;
+use std::time::Duration;
 
 use arboard::Clipboard;
 use clap::{Parser, Subcommand, ValueEnum};
 use shush_vault_core::{EncryptedVault, SecretRecord, Vault, decrypt_vault, encrypt_vault};
+use zeroize::Zeroizing;
 
 #[derive(Parser)]
 #[command(name = "shush")]
@@ -15,7 +18,12 @@ struct Cli {
     #[arg(long, global = true)]
     vault: Option<PathBuf>,
 
-    #[arg(long, global = true, env = "SHUSH_VAULT_PASSPHRASE")]
+    #[arg(
+        long,
+        global = true,
+        env = "SHUSH_VAULT_PASSPHRASE",
+        help = "Automation path; prefer the hidden interactive prompt for normal use"
+    )]
     passphrase: Option<String>,
 }
 
@@ -87,6 +95,10 @@ enum Command {
         workspace: Option<String>,
         #[arg(long)]
         env: Option<String>,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        stdout: bool,
     },
     Copy {
         key: String,
@@ -94,6 +106,8 @@ enum Command {
         workspace: Option<String>,
         #[arg(long)]
         env: Option<String>,
+        #[arg(long, default_value_t = 30)]
+        clear_after: u64,
     },
 }
 
@@ -107,14 +121,11 @@ enum ConflictMode {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let path = cli.vault.unwrap_or_else(default_vault_path);
-    let passphrase = cli
-        .passphrase
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("set SHUSH_VAULT_PASSPHRASE or pass --passphrase"))?;
+    let passphrase = resolve_passphrase(cli.passphrase)?;
 
     match cli.command {
         Command::Init => {
-            save_vault(&path, &passphrase, &Vault::default())?;
+            save_vault(&path, passphrase.as_str(), &Vault::default())?;
             println!("initialized {}", path.display());
         }
         Command::Add {
@@ -125,11 +136,11 @@ fn main() -> anyhow::Result<()> {
             provider,
             notes,
         } => {
-            let mut vault = load_vault(&path, &passphrase)?;
+            let mut vault = load_vault(&path, passphrase.as_str())?;
             vault.add(SecretRecord::create(
                 &workspace, &key, &value, &env, &provider, &notes,
             ));
-            save_vault(&path, &passphrase, &vault)?;
+            save_vault(&path, passphrase.as_str(), &vault)?;
             println!("saved {key}");
         }
         Command::List {
@@ -137,7 +148,7 @@ fn main() -> anyhow::Result<()> {
             env,
             search,
         } => {
-            let vault = load_vault(&path, &passphrase)?;
+            let vault = load_vault(&path, passphrase.as_str())?;
             for record in filtered(
                 vault.visible_records(),
                 workspace.as_deref(),
@@ -158,7 +169,7 @@ fn main() -> anyhow::Result<()> {
             workspace,
             env,
         } => {
-            let vault = load_vault(&path, &passphrase)?;
+            let vault = load_vault(&path, passphrase.as_str())?;
             let Some(record) = vault.find(&key, workspace.as_deref(), env.as_deref()) else {
                 anyhow::bail!("secret not found");
             };
@@ -176,7 +187,7 @@ fn main() -> anyhow::Result<()> {
                 anyhow::bail!("pass --value, --provider, or --notes");
             }
 
-            let mut vault = load_vault(&path, &passphrase)?;
+            let mut vault = load_vault(&path, passphrase.as_str())?;
             if !vault.update(
                 &key,
                 workspace.as_deref(),
@@ -188,7 +199,7 @@ fn main() -> anyhow::Result<()> {
                 anyhow::bail!("secret not found");
             }
 
-            save_vault(&path, &passphrase, &vault)?;
+            save_vault(&path, passphrase.as_str(), &vault)?;
             println!("updated {key}");
         }
         Command::Delete {
@@ -196,12 +207,12 @@ fn main() -> anyhow::Result<()> {
             workspace,
             env,
         } => {
-            let mut vault = load_vault(&path, &passphrase)?;
+            let mut vault = load_vault(&path, passphrase.as_str())?;
             if !vault.delete(&key, workspace.as_deref(), env.as_deref()) {
                 anyhow::bail!("secret not found");
             }
 
-            save_vault(&path, &passphrase, &vault)?;
+            save_vault(&path, passphrase.as_str(), &vault)?;
             println!("deleted {key}");
         }
         Command::Import {
@@ -212,7 +223,7 @@ fn main() -> anyhow::Result<()> {
             conflict,
             preview,
         } => {
-            let mut vault = load_vault(&path, &passphrase)?;
+            let mut vault = load_vault(&path, passphrase.as_str())?;
             let content = fs::read_to_string(env_path)?;
             let items = preview_env(&content);
 
@@ -274,31 +285,64 @@ fn main() -> anyhow::Result<()> {
                 ));
                 imported += 1;
             }
-            save_vault(&path, &passphrase, &vault)?;
+            save_vault(&path, passphrase.as_str(), &vault)?;
             println!("imported {imported}, skipped {skipped}");
         }
-        Command::Export { workspace, env } => {
-            let vault = load_vault(&path, &passphrase)?;
-            for record in filtered(
+        Command::Export {
+            workspace,
+            env,
+            output,
+            stdout,
+        } => {
+            if output.is_none() && !stdout {
+                anyhow::bail!("export writes plaintext; pass --stdout or --output <path>");
+            }
+
+            let vault = load_vault(&path, passphrase.as_str())?;
+            let content = filtered(
                 vault.visible_records(),
                 workspace.as_deref(),
                 env.as_deref(),
                 None,
-            ) {
-                println!("{}={}", record.name, quote_if_needed(&record.value));
+            )
+            .map(|record| format!("{}={}", record.name, quote_if_needed(&record.value)))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+            if stdout {
+                println!("{content}");
+            }
+
+            if let Some(output) = output {
+                fs::write(output, content)?;
             }
         }
         Command::Copy {
             key,
             workspace,
             env,
+            clear_after,
         } => {
-            let vault = load_vault(&path, &passphrase)?;
+            let vault = load_vault(&path, passphrase.as_str())?;
             let Some(record) = vault.find(&key, workspace.as_deref(), env.as_deref()) else {
                 anyhow::bail!("secret not found");
             };
-            Clipboard::new()?.set_text(record.value.clone())?;
-            println!("copied {}", record.name);
+            let copied_value = record.value.clone();
+            let mut clipboard = Clipboard::new()?;
+            clipboard.set_text(copied_value.clone())?;
+            if clear_after == 0 {
+                println!("copied {}", record.name);
+            } else {
+                println!(
+                    "copied {}; clearing clipboard in {clear_after}s",
+                    record.name
+                );
+                thread::sleep(Duration::from_secs(clear_after));
+                if clipboard.get_text().is_ok_and(|text| text == copied_value) {
+                    clipboard.set_text(String::new())?;
+                    println!("cleared clipboard");
+                }
+            }
         }
     }
 
@@ -310,6 +354,16 @@ fn default_vault_path() -> PathBuf {
         .unwrap_or_else(|| std::env::current_dir().expect("current directory"))
         .join("ShushVault")
         .join("vault.shush")
+}
+
+fn resolve_passphrase(passphrase: Option<String>) -> anyhow::Result<Zeroizing<String>> {
+    if let Some(passphrase) = passphrase.filter(|value| !value.is_empty()) {
+        return Ok(Zeroizing::new(passphrase));
+    }
+
+    Ok(Zeroizing::new(rpassword::prompt_password(
+        "Vault passphrase: ",
+    )?))
 }
 
 fn load_vault(path: &PathBuf, passphrase: &str) -> anyhow::Result<Vault> {
