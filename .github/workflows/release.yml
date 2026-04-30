@@ -202,9 +202,10 @@ jobs:
           dmg="artifacts/ShushVault-${version}-macos.dmg"
           hdiutil create -volname "Shush Vault" -srcfolder "$dmg_stage" -ov -format UDZO "$dmg"
           codesign --force --timestamp --sign "$SIGN_IDENTITY" --keychain "$KEYCHAIN_PATH" "$dmg"
-      - name: Notarize and staple
+      - name: Notarize and staple (best effort)
         shell: bash
-        timeout-minutes: 65
+        timeout-minutes: 15
+        continue-on-error: true
         run: |
           set -euo pipefail
           version="${{ needs.resolve-version.outputs.version }}"
@@ -220,21 +221,22 @@ jobs:
           submission_id=$(echo "$submit_json" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
           echo "Submission ID: $submission_id"
 
-          echo "Waiting up to 60 min for notarization..."
-          xcrun notarytool wait "$submission_id" "${NOTARY_ARGS[@]}" --timeout 60m
-
-          echo "Fetching notary log..."
-          xcrun notarytool log "$submission_id" "${NOTARY_ARGS[@]}" || true
-
-          status=$(xcrun notarytool info "$submission_id" "${NOTARY_ARGS[@]}" --output-format json | python3 -c 'import sys,json;print(json.load(sys.stdin)["status"])')
-          echo "Final status: $status"
-          if [ "$status" != "Accepted" ]; then
-            echo "Notarization failed with status: $status"
-            exit 1
+          echo "Waiting up to 12 min for notarization (best effort)..."
+          if xcrun notarytool wait "$submission_id" "${NOTARY_ARGS[@]}" --timeout 12m; then
+            xcrun notarytool log "$submission_id" "${NOTARY_ARGS[@]}" || true
+            status=$(xcrun notarytool info "$submission_id" "${NOTARY_ARGS[@]}" --output-format json | python3 -c 'import sys,json;print(json.load(sys.stdin)["status"])')
+            echo "Final status: $status"
+            if [ "$status" = "Accepted" ]; then
+              xcrun stapler staple "$dmg"
+              xcrun stapler validate "$dmg"
+              echo "DMG notarized and stapled."
+            else
+              echo "Notarization not accepted (status: $status). Shipping signed-only DMG."
+            fi
+          else
+            echo "Apple notary did not respond in time. Shipping signed-only DMG."
+            echo "Submission $submission_id remains in Apple's queue and can be stapled later."
           fi
-
-          xcrun stapler staple "$dmg"
-          xcrun stapler validate "$dmg"
           rm -f "$KEY_PATH"
       - uses: actions/upload-artifact@v4
         with:
@@ -268,7 +270,7 @@ jobs:
           Run **ShushVault-VERSION-Setup.exe**. Updates ship via Velopack.
 
           ### macOS
-          Open **ShushVault-VERSION-macos.dmg** and drag **Shush Vault** to Applications. Signed with Developer ID and notarized by Apple, so it'll just launch.
+          Open **ShushVault-VERSION-macos.dmg** and drag **Shush Vault** to Applications. Signed with Developer ID. If macOS blocks the first launch, right-click the app → **Open** → confirm.
 
           Requires macOS 14 or newer.
 
