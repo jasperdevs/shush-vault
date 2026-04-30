@@ -214,8 +214,32 @@ public sealed class VaultService
 
         var json = JsonSerializer.SerializeToUtf8Bytes(new VaultDocument(records.ToList()), JsonOptions);
         var envelope = Encrypt(json, passphrase!);
-        await File.WriteAllBytesAsync(filePath, JsonSerializer.SerializeToUtf8Bytes(envelope, JsonOptions), cancellationToken);
+        await WriteVaultAtomicallyAsync(JsonSerializer.SerializeToUtf8Bytes(envelope, JsonOptions), cancellationToken);
         CryptographicOperations.ZeroMemory(json);
+    }
+
+    private async Task WriteVaultAtomicallyAsync(byte[] contents, CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(filePath)
+            ?? throw new InvalidOperationException("Vault path has no parent directory.");
+        Directory.CreateDirectory(directory);
+
+        var tempPath = Path.Combine(directory, $"{Path.GetFileName(filePath)}.{Guid.NewGuid():N}.tmp");
+        var backupPath = Path.Combine(directory, $"{Path.GetFileName(filePath)}.bak");
+        await using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+        {
+            await stream.WriteAsync(contents, cancellationToken);
+            await stream.FlushAsync(cancellationToken);
+        }
+
+        if (File.Exists(filePath))
+        {
+            File.Delete(backupPath);
+            File.Replace(tempPath, filePath, backupPath, ignoreMetadataErrors: true);
+            return;
+        }
+
+        File.Move(tempPath, filePath);
     }
 
     private void EnsureUnlocked()

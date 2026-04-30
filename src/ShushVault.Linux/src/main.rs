@@ -691,7 +691,23 @@ fn save_vault(path: &PathBuf, passphrase: &str, vault: &Vault) -> anyhow::Result
     }
 
     let encrypted = encrypt_vault(vault, passphrase)?;
-    fs::write(path, serde_json::to_vec_pretty(&encrypted)?)?;
+    write_vault_atomically(path, &serde_json::to_vec_pretty(&encrypted)?)?;
+    Ok(())
+}
+
+fn write_vault_atomically(path: &PathBuf, contents: &[u8]) -> anyhow::Result<()> {
+    let temp_path = path.with_extension("shush.tmp");
+    {
+        let mut file = fs::File::create(&temp_path)?;
+        std::io::Write::write_all(&mut file, contents)?;
+        file.sync_all()?;
+    }
+
+    fs::rename(&temp_path, path)?;
+    if let Some(parent) = path.parent() {
+        let _ = fs::File::open(parent).and_then(|dir| dir.sync_all());
+    }
+
     Ok(())
 }
 

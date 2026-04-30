@@ -53,6 +53,29 @@ public sealed class VaultServiceTests
     }
 
     [TestMethod]
+    public async Task SaveAsyncUsesRecoverableAtomicReplacement()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ShushVault.Tests", Guid.NewGuid().ToString("N"));
+        var service = new VaultService(root);
+        service.Unlock("correct horse battery staple");
+
+        await service.AddAsync("Default", "FIRST", "one", "Dev", "", "");
+        await service.AddAsync("Default", "SECOND", "two", "Dev", "", "");
+        await service.UpdateAsync((await service.LoadAsync())[0].Id, "Default", "SECOND", "three", "Dev", "", "");
+
+        var backupPath = Path.Combine(root, "vault.shush.bak");
+        Assert.IsTrue(File.Exists(Path.Combine(root, "vault.shush")));
+        Assert.IsTrue(File.Exists(backupPath));
+
+        var reloaded = new VaultService(root);
+        reloaded.Unlock("correct horse battery staple");
+        var records = await reloaded.LoadAsync();
+
+        Assert.AreEqual(2, records.Count);
+        Assert.IsTrue(records.Any(record => record.Name == "SECOND" && record.Value == "three"));
+    }
+
+    [TestMethod]
     public async Task LoadAsyncRejectsUnsupportedIterationCountBeforePbkdf()
     {
         var root = Path.Combine(Path.GetTempPath(), "ShushVault.Tests", Guid.NewGuid().ToString("N"));

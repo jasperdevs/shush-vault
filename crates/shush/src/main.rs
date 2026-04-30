@@ -381,7 +381,52 @@ fn save_vault(path: &PathBuf, passphrase: &str, vault: &Vault) -> anyhow::Result
     }
 
     let encrypted = encrypt_vault(vault, passphrase)?;
-    fs::write(path, serde_json::to_vec_pretty(&encrypted)?)?;
+    write_vault_atomically(path, &serde_json::to_vec_pretty(&encrypted)?)?;
+    Ok(())
+}
+
+fn write_vault_atomically(path: &PathBuf, contents: &[u8]) -> anyhow::Result<()> {
+    let temp_path = path.with_extension("shush.tmp");
+    {
+        let mut file = fs::File::create(&temp_path)?;
+        std::io::Write::write_all(&mut file, contents)?;
+        file.sync_all()?;
+    }
+
+    replace_file(&temp_path, path)?;
+    if let Some(parent) = path.parent() {
+        let _ = fs::File::open(parent).and_then(|dir| dir.sync_all());
+    }
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_file(temp_path: &PathBuf, path: &PathBuf) -> anyhow::Result<()> {
+    fs::rename(temp_path, path)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn replace_file(temp_path: &PathBuf, path: &PathBuf) -> anyhow::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    };
+
+    let mut temp: Vec<u16> = temp_path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut destination: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let result = unsafe {
+        MoveFileExW(
+            temp.as_mut_ptr(),
+            destination.as_mut_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if result == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+
     Ok(())
 }
 

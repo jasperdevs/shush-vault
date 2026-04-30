@@ -260,8 +260,8 @@ final class VaultStore: ObservableObject {
     private static func saveVault(rows: [SecretRow], fileURL: URL, passphrase: String) throws {
         try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
-        let salt = randomData(count: saltLength)
-        let nonce = randomData(count: nonceLength)
+        let salt = try randomData(count: saltLength)
+        let nonce = try randomData(count: nonceLength)
         let key = pbkdf2SHA256(passphrase: passphrase, salt: salt, iterations: kdfIterations)
         let plaintext = try JSONEncoder().encode(VaultDocument(records: rows))
         let box = try AES.GCM.seal(plaintext, using: SymmetricKey(data: key), nonce: AES.GCM.Nonce(data: nonce))
@@ -335,11 +335,15 @@ final class VaultStore: ObservableObject {
 
 private enum VaultError: Error {
     case invalidEnvelope
+    case randomGenerationFailed
 }
 
-private func randomData(count: Int) -> Data {
+private func randomData(count: Int) throws -> Data {
     var data = Data(count: count)
-    _ = data.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }
+    let status = data.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }
+    guard status == errSecSuccess else {
+        throw VaultError.randomGenerationFailed
+    }
     return data
 }
 

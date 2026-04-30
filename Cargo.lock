@@ -1100,6 +1100,7 @@ dependencies = [
  "rpassword",
  "serde_json",
  "shush-vault-core",
+ "windows-sys 0.60.2",
  "zeroize",
 ]
 
