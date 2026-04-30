@@ -36,7 +36,8 @@ internal sealed class SettingsWindow : Window
         var (root, titleBar) = BuildContent();
         Content = root;
         SetTitleBar(titleBar);
-        Resize(560, 640);
+        Resize(540, 600);
+        WindowMinSize.Apply(this, 480, 480);
         if (root is FrameworkElement element)
         {
             element.Loaded += (_, _) => CursorHelper.ApplyToTree(element);
@@ -49,7 +50,7 @@ internal sealed class SettingsWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(36) });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var titleBar = new WindowTitleBar { Title = "Shush Vault" };
+        var titleBar = new WindowTitleBar { Title = "Settings" };
         root.Children.Add(titleBar);
 
         var scroll = new ScrollViewer
@@ -104,6 +105,7 @@ internal sealed class SettingsWindow : Window
             var package = new DataPackage();
             package.SetText(vaultPath);
             Clipboard.SetContent(package);
+            CopyFlyout.Show(copyButton);
         };
         iconBar.Children.Add(copyButton);
 
@@ -191,22 +193,25 @@ internal sealed class SettingsWindow : Window
         stack.Children.Add(SectionHeader("Updates"));
 
         var version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
-        stack.Children.Add(new TextBlock
-        {
-            FontSize = 12,
-            Foreground = Brush("TextFillColorSecondaryBrush"),
-            Text = $"Current version {version}. Updates ship from GitHub releases."
-        });
+
+        var row = new Grid { ColumnSpacing = 12 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var status = new TextBlock
         {
             FontSize = 12,
             Foreground = Brush("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
-            Text = string.Empty
+            VerticalAlignment = VerticalAlignment.Center,
+            Text = $"Version {version} • latest checked when you click Check."
         };
+        Grid.SetColumn(status, 0);
+        row.Children.Add(status);
 
         var checkButton = ActionButton("Check for updates");
+        checkButton.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(checkButton, 1);
         checkButton.Click += async (_, _) =>
         {
             checkButton.IsEnabled = false;
@@ -219,8 +224,8 @@ internal sealed class SettingsWindow : Window
                 checkButton.IsEnabled = true;
             }
         };
-        stack.Children.Add(checkButton);
-        stack.Children.Add(status);
+        row.Children.Add(checkButton);
+        stack.Children.Add(row);
 
         return Card(stack);
     }

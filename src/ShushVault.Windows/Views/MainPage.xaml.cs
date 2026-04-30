@@ -259,44 +259,9 @@ namespace ShushVault.Windows.Views
             Clipboard.SetContent(package);
             if (anchor is not null)
             {
-                ShowCopiedFlyout(anchor);
+                CopyFlyout.Show(anchor);
             }
             _ = ClearClipboardLaterAsync(record.Value, settings.ClipboardClearSeconds);
-        }
-
-        private void ShowCopiedFlyout(FrameworkElement anchor)
-        {
-            try
-            {
-                var label = new TextBlock
-                {
-                    Text = "Copied",
-                    FontSize = 12,
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                };
-                var flyout = new Flyout
-                {
-                    Content = label,
-                    Placement = FlyoutPlacementMode.Top,
-                    ShowMode = FlyoutShowMode.Transient,
-                    OverlayInputPassThroughElement = anchor,
-                };
-                flyout.ShowAt(anchor, new FlyoutShowOptions { Placement = FlyoutPlacementMode.Top });
-
-                var timer = DispatcherQueue.CreateTimer();
-                timer.Interval = TimeSpan.FromMilliseconds(900);
-                timer.IsRepeating = false;
-                timer.Tick += (_, _) =>
-                {
-                    timer.Stop();
-                    flyout.Hide();
-                };
-                timer.Start();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Copied flyout failed: {ex.Message}");
-            }
         }
 
         private void OnRowPointerEntered(object sender, PointerRoutedEventArgs e)

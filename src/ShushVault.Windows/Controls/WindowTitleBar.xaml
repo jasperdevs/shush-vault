@@ -7,10 +7,12 @@
     <Grid MinHeight="36" Background="Transparent">
         <TextBlock
             x:Name="TitleText"
-            Margin="16,0,0,0"
+            Margin="16,0,148,0"
+            HorizontalAlignment="Left"
             VerticalAlignment="Center"
             FontSize="12"
             FontWeight="SemiBold"
-            Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+            Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+            TextTrimming="CharacterEllipsis" />
     </Grid>
 </UserControl>

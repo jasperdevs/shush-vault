@@ -99,7 +99,7 @@
             </Style>
 
             <SolidColorBrush x:Key="PageBackgroundBrush" Color="#161616" />
-            <SolidColorBrush x:Key="ModalScrimBrush" Color="#0F0F0F" />
+            <SolidColorBrush x:Key="ModalScrimBrush" Color="#990F0F0F" />
             <SolidColorBrush x:Key="ModalSurfaceBrush" Color="#1F1F1F" />
             <SolidColorBrush x:Key="ModalBorderBrush" Color="#2D2D2D" />
             <SolidColorBrush x:Key="CardSurfaceBrush" Color="#1C1C1C" />

@@ -279,7 +279,9 @@
                 Visibility="Collapsed">
                 <Border
                     x:Name="SecretDialog"
-                    Width="540"
+                    MaxWidth="540"
+                    MaxHeight="640"
+                    Margin="24"
                     Padding="24"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
@@ -394,7 +396,9 @@
 
                 <Border
                     x:Name="ImportDialog"
-                    Width="780"
+                    MaxWidth="720"
+                    MaxHeight="640"
+                    Margin="24"
                     Padding="24"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
@@ -483,7 +487,8 @@
 
                 <Border
                     x:Name="WorkspaceDialog"
-                    Width="380"
+                    MaxWidth="420"
+                    Margin="24"
                     Padding="24"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"

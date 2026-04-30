@@ -37,7 +37,8 @@ namespace ShushVault.Windows
             MainWindow.Title = "Shush Vault";
             _ = rootFrame.Navigate(typeof(MainPage), e.Arguments);
             MainWindow.Activate();
-            ResizeMainWindow(960, 660);
+            ResizeMainWindow(880, 600);
+            WindowMinSize.Apply(MainWindow, 720, 480);
             ApplyWindowIcon();
         }
 
