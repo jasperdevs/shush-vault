@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using Windows.Security.Credentials.UI;
 
@@ -6,9 +7,26 @@ namespace ShushVault.Windows;
 
 internal sealed class PlatformUnlockService
 {
-    private const string CredentialTarget = "ShushVault.VaultPassphrase";
+    private const string HelloCredentialTarget = "ShushVault.VaultPassphrase";
+    private const string DeviceCredentialTarget = "ShushVault.DeviceVaultKey";
     private const int CredTypeGeneric = 1;
     private const int CredPersistLocalMachine = 2;
+
+    public string GetOrCreateDevicePassphrase()
+    {
+        var existing = ReadPassphrase(DeviceCredentialTarget);
+        if (!string.IsNullOrWhiteSpace(existing))
+        {
+            return existing;
+        }
+
+        var generated = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        WritePassphrase(DeviceCredentialTarget, generated);
+        return generated;
+    }
+
+    public void SaveDevicePassphrase(string passphrase)
+        => WritePassphrase(DeviceCredentialTarget, passphrase);
 
     public async Task<PlatformUnlockState> GetStateAsync()
     {
@@ -16,7 +34,7 @@ internal sealed class PlatformUnlockService
         var available = availability is UserConsentVerifierAvailability.Available;
         return new PlatformUnlockState(
             available,
-            HasSavedPassphrase(),
+            HasSavedPassphrase(HelloCredentialTarget),
             availability switch
             {
                 UserConsentVerifierAvailability.Available => "Windows Hello or PIN is available.",
@@ -31,7 +49,7 @@ internal sealed class PlatformUnlockService
     {
         var result = await UserConsentVerifier.RequestVerificationAsync("Unlock Shush Vault");
         return result is UserConsentVerificationResult.Verified
-            ? ReadPassphrase()
+            ? ReadPassphrase(HelloCredentialTarget)
             : null;
     }
 
@@ -43,19 +61,19 @@ internal sealed class PlatformUnlockService
             return false;
         }
 
-        WritePassphrase(passphrase);
+        WritePassphrase(HelloCredentialTarget, passphrase);
         return true;
     }
 
     public void DeleteSavedPassphrase()
-        => CredDelete(CredentialTarget, CredTypeGeneric, 0);
+        => CredDelete(HelloCredentialTarget, CredTypeGeneric, 0);
 
-    private static bool HasSavedPassphrase()
-        => ReadPassphrase() is not null;
+    private static bool HasSavedPassphrase(string target)
+        => ReadPassphrase(target) is not null;
 
-    private static string? ReadPassphrase()
+    private static string? ReadPassphrase(string target)
     {
-        if (!CredRead(CredentialTarget, CredTypeGeneric, 0, out var credentialPointer))
+        if (!CredRead(target, CredTypeGeneric, 0, out var credentialPointer))
         {
             return null;
         }
@@ -73,7 +91,7 @@ internal sealed class PlatformUnlockService
         }
     }
 
-    private static void WritePassphrase(string passphrase)
+    private static void WritePassphrase(string target, string passphrase)
     {
         var bytes = Encoding.Unicode.GetBytes(passphrase);
         var blob = Marshal.AllocCoTaskMem(bytes.Length);
@@ -83,7 +101,7 @@ internal sealed class PlatformUnlockService
             var credential = new Credential
             {
                 Type = CredTypeGeneric,
-                TargetName = CredentialTarget,
+                TargetName = target,
                 CredentialBlobSize = (uint)bytes.Length,
                 CredentialBlob = blob,
                 Persist = CredPersistLocalMachine,

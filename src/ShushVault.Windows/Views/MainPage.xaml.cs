@@ -1,11 +1,10 @@
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using ShushVault.Core;
 using ShushVault.Windows;
 using Windows.ApplicationModel.DataTransfer;
-using Windows.Storage.Pickers;
-using WinRT.Interop;
 
 namespace ShushVault.Windows.Views
 {
@@ -14,24 +13,26 @@ namespace ShushVault.Windows.Views
         private readonly VaultService vaultService = new();
         private readonly PlatformUnlockService platformUnlockService = new();
         private readonly List<SecretRecord> allRecords = [];
+        private readonly List<string> workspaces = ["Default"];
+        private SettingsWindow? settingsWindow;
         private string? editingId;
+        private string environmentFilter = "All";
+        private string secretEnvironment = "Dev";
+        private string importEnvironment = "Dev";
+        private int clipboardClearSeconds = 30;
 
         public ObservableCollection<SecretListItem> Secrets { get; } = [];
-
         public ObservableCollection<ImportPreviewListItem> ImportPreview { get; } = [];
 
         public MainPage()
         {
             this.InitializeComponent();
             App.MainWindow.SetTitleBar(TitleBarDragRegion);
-            VaultPathText.Text = vaultService.FilePath;
-            SetUnlockedUi(false);
-            SetSelectionActions(false);
+            vaultService.Unlock(platformUnlockService.GetOrCreateDevicePassphrase());
             _ = LoadSecretsAsync();
-            _ = RefreshPlatformUnlockStateAsync();
         }
 
-        private async Task<bool> LoadSecretsAsync()
+        private async Task LoadSecretsAsync()
         {
             try
             {
@@ -39,137 +40,91 @@ namespace ShushVault.Windows.Views
                 allRecords.AddRange(await vaultService.LoadAsync());
                 RefreshWorkspaceChoices();
                 ApplyFilters();
-                return true;
-            }
-            catch (InvalidOperationException ex)
-            {
-                StatusText.Text = ex.Message;
-                return false;
             }
             catch (CryptographicException)
             {
-                vaultService.Lock();
-                allRecords.Clear();
-                Secrets.Clear();
-                VaultStateText.Text = "Locked";
-                SetUnlockedUi(false);
-                StatusText.Text = "Could not unlock the vault. Check the passphrase.";
-                return false;
+                StatusText.Text = "Could not open the encrypted vault. If this was created with an old passphrase, reset or migrate it from Settings.";
             }
-        }
-
-        private async void OnUnlockClicked(object sender, RoutedEventArgs e)
-        {
-            var passphrase = PassphraseBox.Password;
-            if (!await UnlockWithPassphraseAsync(passphrase))
-            {
-                return;
-            }
-
-            PassphraseBox.Password = string.Empty;
-        }
-
-        private async void OnPlatformUnlockClicked(object sender, RoutedEventArgs e)
-        {
-            var passphrase = await platformUnlockService.ReadPassphraseWithConsentAsync();
-            if (passphrase is null)
-            {
-                StatusText.Text = "Windows Hello unlock was canceled or no passphrase is saved.";
-                return;
-            }
-
-            await UnlockWithPassphraseAsync(passphrase);
-        }
-
-        private async void OnSavePlatformUnlockClicked(object sender, RoutedEventArgs e)
-        {
-            var passphrase = !string.IsNullOrWhiteSpace(SettingsPassphraseBox.Password)
-                ? SettingsPassphraseBox.Password
-                : PassphraseBox.Password;
-            if (!await UnlockWithPassphraseAsync(passphrase))
-            {
-                return;
-            }
-
-            PassphraseBox.Password = string.Empty;
-            SettingsPassphraseBox.Password = string.Empty;
-            if (await platformUnlockService.SavePassphraseWithConsentAsync(passphrase))
-            {
-                StatusText.Text = "Saved passphrase to Windows Credential Manager for Windows Hello unlock.";
-            }
-
-            await RefreshPlatformUnlockStateAsync();
-        }
-
-        private async void OnRemovePlatformUnlockClicked(object sender, RoutedEventArgs e)
-        {
-            platformUnlockService.DeleteSavedPassphrase();
-            await RefreshPlatformUnlockStateAsync();
-            StatusText.Text = "Removed saved Windows Hello unlock.";
         }
 
         private void OnSettingsClicked(object sender, RoutedEventArgs e)
-            => SettingsOverlay.Visibility = Visibility.Visible;
-
-        private void OnCloseSettingsClicked(object sender, RoutedEventArgs e)
-            => SettingsOverlay.Visibility = Visibility.Collapsed;
+        {
+            settingsWindow ??= new SettingsWindow(
+                vaultService.FilePath,
+                clipboardClearSeconds,
+                seconds => clipboardClearSeconds = seconds);
+            settingsWindow.Activate();
+        }
 
         private void OnNewSecretClicked(object sender, RoutedEventArgs e)
         {
-            if (!vaultService.IsUnlocked)
-            {
-                StatusText.Text = "Unlock the vault first.";
-                return;
-            }
-
-            ClearEditor();
-            EditorExpander.Header = "Add secret";
-            EditorExpander.IsExpanded = true;
+            editingId = null;
+            ClearSecretForm();
+            SecretDialogTitle.Text = "New Secret";
+            SaveButton.Content = "Save";
+            ShowDialog(SecretDialog);
             NameBox.Focus(FocusState.Programmatic);
         }
 
-        private void OnSecretSelectionChanged(object sender, SelectionChangedEventArgs e)
-            => SetSelectionActions(SecretsList.SelectedItem is SecretListItem);
-
-        private void OnLockClicked(object sender, RoutedEventArgs e)
+        private void OnImportEnvClicked(object sender, RoutedEventArgs e)
         {
-            vaultService.Lock();
-            allRecords.Clear();
-            Secrets.Clear();
             ImportPreview.Clear();
-            PassphraseBox.Password = string.Empty;
-            SettingsPassphraseBox.Password = string.Empty;
-            ClearEditor();
-            VaultStateText.Text = "Locked";
-            SettingsOverlay.Visibility = Visibility.Collapsed;
-            SetUnlockedUi(false);
-            StatusText.Text = "Locked.";
+            EnvImportBox.Text = string.Empty;
+            SelectComboValue(ImportWorkspaceBox, "Default");
+            SetImportEnvironment("Dev");
+            ShowDialog(ImportDialog);
+            EnvImportBox.Focus(FocusState.Programmatic);
+        }
+
+        private void OnAddWorkspaceClicked(object sender, RoutedEventArgs e)
+        {
+            NewWorkspaceBox.Text = string.Empty;
+            ShowDialog(WorkspaceDialog);
+            NewWorkspaceBox.Focus(FocusState.Programmatic);
+        }
+
+        private void OnCancelWorkspaceClicked(object sender, RoutedEventArgs e)
+            => ShowDialog(SecretDialog);
+
+        private void OnCreateWorkspaceClicked(object sender, RoutedEventArgs e)
+        {
+            var workspace = NewWorkspaceBox.Text.Trim();
+            if (workspace.Length == 0)
+            {
+                StatusText.Text = "Workspace name is required.";
+                return;
+            }
+
+            if (!workspaces.Contains(workspace, StringComparer.OrdinalIgnoreCase))
+            {
+                workspaces.Add(workspace);
+                workspaces.Sort(StringComparer.OrdinalIgnoreCase);
+            }
+
+            RefreshWorkspaceCombos(workspace);
+            ShowDialog(SecretDialog);
         }
 
         private async void OnSaveClicked(object sender, RoutedEventArgs e)
         {
             try
             {
-                if (!TryUnlockFromInput())
-                {
-                    return;
-                }
-
                 IReadOnlyList<SecretRecord> records;
                 if (editingId is null)
                 {
-                    records = await vaultService.AddAsync(SelectedWorkspace(), NameBox.Text, ValueBox.Password, SelectedEnvironment(), ProviderBox.Text, NotesBox.Text);
-                    StatusText.Text = "Saved to the encrypted vault.";
+                    records = await vaultService.AddAsync(SelectedWorkspace(WorkspaceBox), NameBox.Text, ValueBox.Password, secretEnvironment, ProviderBox.Text, NotesBox.Text);
+                    StatusText.Text = $"Saved {NameBox.Text.Trim()}.";
                 }
                 else
                 {
-                    records = await vaultService.UpdateAsync(editingId, SelectedWorkspace(), NameBox.Text, ValueBox.Password, SelectedEnvironment(), ProviderBox.Text, NotesBox.Text);
-                    StatusText.Text = "Updated the encrypted vault.";
+                    records = await vaultService.UpdateAsync(editingId, SelectedWorkspace(WorkspaceBox), NameBox.Text, ValueBox.Password, secretEnvironment, ProviderBox.Text, NotesBox.Text);
+                    StatusText.Text = $"Updated {NameBox.Text.Trim()}.";
                 }
 
                 allRecords.Clear();
                 allRecords.AddRange(records);
-                ClearEditor();
+                HideDialogs();
+                ClearSecretForm();
                 RefreshWorkspaceChoices();
                 ApplyFilters();
             }
@@ -179,22 +134,14 @@ namespace ShushVault.Windows.Views
             }
             catch (CryptographicException)
             {
-                StatusText.Text = "Could not unlock the vault. Check the passphrase.";
-            }
-            catch (InvalidOperationException ex)
-            {
-                StatusText.Text = ex.Message;
+                StatusText.Text = "Could not save to the encrypted vault.";
             }
         }
-
-        private void OnClearClicked(object sender, RoutedEventArgs e)
-            => ClearEditor();
 
         private void OnEditClicked(object sender, RoutedEventArgs e)
         {
             if (SecretsList.SelectedItem is not SecretListItem item)
             {
-                StatusText.Text = "Select a secret to edit.";
                 return;
             }
 
@@ -205,50 +152,29 @@ namespace ShushVault.Windows.Views
             ValueBox.Password = record.Value;
             ProviderBox.Text = record.Provider;
             NotesBox.Text = record.Notes;
-            EnvironmentBox.SelectedIndex = record.Environment switch
-            {
-                "Staging" => 1,
-                "Prod" => 2,
-                _ => 0
-            };
-            SaveButton.Content = "Update";
-            EditorExpander.Header = "Edit secret";
-            EditorExpander.IsExpanded = true;
-            StatusText.Text = "Editing selected secret.";
+            SetSecretEnvironment(record.Environment);
+            SecretDialogTitle.Text = "Edit Secret";
+            SaveButton.Content = "Save";
+            ShowDialog(SecretDialog);
         }
 
         private async void OnDeleteClicked(object sender, RoutedEventArgs e)
         {
-            if (!TryUnlockFromInput())
-            {
-                return;
-            }
-
             if (SecretsList.SelectedItem is not SecretListItem item)
             {
-                StatusText.Text = "Select a secret to delete.";
                 return;
             }
 
-            var records = await vaultService.DeleteAsync(item.Id);
             allRecords.Clear();
-            allRecords.AddRange(records);
-            ClearEditor();
-            RefreshWorkspaceChoices();
+            allRecords.AddRange(await vaultService.DeleteAsync(item.Id));
             ApplyFilters();
             StatusText.Text = "Deleted selected secret.";
         }
 
         private void OnCopyClicked(object sender, RoutedEventArgs e)
         {
-            if (!TryUnlockFromInput())
-            {
-                return;
-            }
-
             if (SecretsList.SelectedItem is not SecretListItem item)
             {
-                StatusText.Text = "Select a secret to copy.";
                 return;
             }
 
@@ -256,89 +182,77 @@ namespace ShushVault.Windows.Views
             var package = new DataPackage();
             package.SetText(record.Value);
             Clipboard.SetContent(package);
-            var clearSeconds = SelectedClipboardClearSeconds();
-            _ = ClearClipboardLaterAsync(record.Value, clearSeconds);
-            StatusText.Text = ClipboardStatus($"Copied {record.Name}.", clearSeconds);
+            _ = ClearClipboardLaterAsync(record.Value, clipboardClearSeconds);
+            StatusText.Text = ClipboardStatus($"Copied {record.Name}.", clipboardClearSeconds);
         }
 
-        private async void OnChooseEnvClicked(object sender, RoutedEventArgs e)
+        private void OnExportClicked(object sender, RoutedEventArgs e)
         {
-            var picker = new FileOpenPicker
-            {
-                SuggestedStartLocation = PickerLocationId.DocumentsLibrary
-            };
-            picker.FileTypeFilter.Add(".env");
-            picker.FileTypeFilter.Add(".txt");
-            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.MainWindow));
-
-            var file = await picker.PickSingleFileAsync();
-            if (file is null)
-            {
-                return;
-            }
-
-            EnvImportBox.Text = await File.ReadAllTextAsync(file.Path);
-            RefreshImportPreview();
+            var visibleIds = Secrets.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+            var exported = vaultService.ExportEnv(allRecords.Where(record => visibleIds.Contains(record.Id)));
+            var package = new DataPackage();
+            package.SetText(exported);
+            Clipboard.SetContent(package);
+            _ = ClearClipboardLaterAsync(exported, clipboardClearSeconds);
+            StatusText.Text = ClipboardStatus("Copied visible secrets as .env.", clipboardClearSeconds);
         }
 
         private async void OnImportClicked(object sender, RoutedEventArgs e)
         {
-            if (!TryUnlockFromInput())
-            {
-                return;
-            }
-
             if (string.IsNullOrWhiteSpace(EnvImportBox.Text))
             {
-                StatusText.Text = "Paste or choose a .env file first.";
+                StatusText.Text = "Paste KEY=value lines first.";
                 return;
             }
 
-            var records = await vaultService.ImportEnvAsync(
-                EnvImportBox.Text,
-                SelectedWorkspace(),
-                SelectedEnvironment(),
-                ProviderBox.Text,
-                SelectedConflictMode());
-
             allRecords.Clear();
-            allRecords.AddRange(records);
-            EnvImportBox.Text = string.Empty;
+            allRecords.AddRange(await vaultService.ImportEnvAsync(
+                EnvImportBox.Text,
+                SelectedWorkspace(ImportWorkspaceBox),
+                importEnvironment,
+                ImportProviderBox.Text,
+                SelectedConflictMode()));
+            HideDialogs();
             ImportPreview.Clear();
             RefreshWorkspaceChoices();
             ApplyFilters();
             StatusText.Text = "Imported .env entries.";
         }
 
-        private void OnExportClicked(object sender, RoutedEventArgs e)
+        private void OnCloseDialogClicked(object sender, RoutedEventArgs e)
         {
-            if (!TryUnlockFromInput())
-            {
-                return;
-            }
+            HideDialogs();
+            ClearSecretForm();
+        }
 
-            var visibleIds = Secrets.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
-            var visibleRecords = allRecords.Where(record => visibleIds.Contains(record.Id)).ToList();
-            var exported = vaultService.ExportEnv(visibleRecords);
-            var package = new DataPackage();
-            package.SetText(exported);
-            Clipboard.SetContent(package);
-            var clearSeconds = SelectedClipboardClearSeconds();
-            _ = ClearClipboardLaterAsync(exported, clearSeconds);
-            StatusText.Text = ClipboardStatus("Copied visible secrets as .env.", clearSeconds);
+        private void OnSecretSelectionChanged(object sender, SelectionChangedEventArgs e)
+            => SetSelectionActions(SecretsList.SelectedItem is SecretListItem);
+
+        private void OnFilterChanged(object sender, object e)
+            => ApplyFilters();
+
+        private void OnFilterEnvironmentClicked(object sender, RoutedEventArgs e)
+        {
+            environmentFilter = (sender as Button)?.Content?.ToString() ?? "All";
+            ApplyFilters();
+        }
+
+        private void OnSecretEnvironmentClicked(object sender, RoutedEventArgs e)
+            => SetSecretEnvironment((sender as ToggleButton)?.Content?.ToString() ?? "Dev");
+
+        private void OnImportEnvironmentClicked(object sender, RoutedEventArgs e)
+        {
+            SetImportEnvironment((sender as ToggleButton)?.Content?.ToString() ?? "Dev");
+            RefreshImportPreview();
         }
 
         private void OnEnvImportTextChanged(object sender, TextChangedEventArgs e)
             => RefreshImportPreview();
 
-        private void OnFilterChanged(object sender, object e)
-            => ApplyFilters();
-
         private void RefreshImportPreview()
         {
             ImportPreview.Clear();
-
-            foreach (var item in vaultService.PreviewEnv(EnvImportBox.Text, SelectedWorkspace(), SelectedEnvironment()))
+            foreach (var item in vaultService.PreviewEnv(EnvImportBox.Text, SelectedWorkspace(ImportWorkspaceBox), importEnvironment))
             {
                 ImportPreview.Add(ImportPreviewListItem.From(item));
             }
@@ -347,16 +261,12 @@ namespace ShushVault.Windows.Views
         private void ApplyFilters()
         {
             var search = SearchBox?.Text.Trim() ?? string.Empty;
-            var workspace = SelectedWorkspaceFilter();
-            var environment = SelectedFilterEnvironment();
-
             var filtered = allRecords.Where(record =>
                 (search.Length == 0 ||
                     record.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
                     record.Provider.Contains(search, StringComparison.OrdinalIgnoreCase) ||
                     record.Notes.Contains(search, StringComparison.OrdinalIgnoreCase)) &&
-                (workspace.Length == 0 || record.Workspace.Contains(workspace, StringComparison.OrdinalIgnoreCase)) &&
-                (environment == "All" || record.Environment.Equals(environment, StringComparison.OrdinalIgnoreCase)))
+                (environmentFilter == "All" || record.Environment.Equals(environmentFilter, StringComparison.OrdinalIgnoreCase)))
                 .OrderByDescending(record => record.UpdatedAt)
                 .ToList();
 
@@ -365,130 +275,90 @@ namespace ShushVault.Windows.Views
             {
                 Secrets.Add(SecretListItem.From(record));
             }
-            SetSelectionActions(false);
 
-            if (StatusText is not null)
-            {
-                StatusText.Text = !vaultService.IsUnlocked
-                    ? "Locked. Enter a passphrase to unlock or create your encrypted vault."
-                    : filtered.Count == 0
-                    ? "No secrets yet. Use New secret to add one."
-                    : $"{filtered.Count} secret{(filtered.Count == 1 ? string.Empty : "s")} shown.";
-            }
+            SetSelectionActions(false);
+            ExportButton.IsEnabled = Secrets.Count > 0;
+            StatusText.Text = filtered.Count == 0
+                ? "No secrets yet."
+                : $"{filtered.Count} secret{(filtered.Count == 1 ? string.Empty : "s")} shown.";
         }
 
-        private void ClearEditor()
+        private void ShowDialog(FrameworkElement dialog)
+        {
+            DialogLayer.Visibility = Visibility.Visible;
+            SecretDialog.Visibility = Visibility.Collapsed;
+            ImportDialog.Visibility = Visibility.Collapsed;
+            WorkspaceDialog.Visibility = Visibility.Collapsed;
+            dialog.Visibility = Visibility.Visible;
+        }
+
+        private void HideDialogs()
+        {
+            DialogLayer.Visibility = Visibility.Collapsed;
+            SecretDialog.Visibility = Visibility.Collapsed;
+            ImportDialog.Visibility = Visibility.Collapsed;
+            WorkspaceDialog.Visibility = Visibility.Collapsed;
+        }
+
+        private void ClearSecretForm()
         {
             editingId = null;
+            SelectComboValue(WorkspaceBox, "Default");
             NameBox.Text = string.Empty;
             ValueBox.Password = string.Empty;
             ProviderBox.Text = string.Empty;
             NotesBox.Text = string.Empty;
-            SaveButton.Content = "Save";
-            EditorExpander.Header = "Add secret";
+            SetSecretEnvironment("Dev");
         }
 
-        private bool TryUnlockFromInput()
+        private void SetSecretEnvironment(string environment)
         {
-            if (vaultService.IsUnlocked)
-            {
-                return true;
-            }
-
-            try
-            {
-                vaultService.Unlock(PassphraseBox.Password);
-                PassphraseBox.Password = string.Empty;
-                return true;
-            }
-            catch (ArgumentException ex)
-            {
-                StatusText.Text = ex.Message;
-                return false;
-            }
+            secretEnvironment = environment;
+            DevToggle.IsChecked = environment == "Dev";
+            StagingToggle.IsChecked = environment == "Staging";
+            ProdToggle.IsChecked = environment == "Prod";
         }
 
-        private async Task<bool> UnlockWithPassphraseAsync(string passphrase)
+        private void SetImportEnvironment(string environment)
         {
-            try
-            {
-                vaultService.Unlock(passphrase);
-            }
-            catch (ArgumentException ex)
-            {
-                StatusText.Text = ex.Message;
-                return false;
-            }
-
-            if (!await LoadSecretsAsync())
-            {
-                return false;
-            }
-
-            StatusText.Text = $"Unlocked {Path.GetFileName(vaultService.FilePath)}.";
-            VaultStateText.Text = "Unlocked";
-            SetUnlockedUi(true);
-            return true;
-        }
-
-        private async Task RefreshPlatformUnlockStateAsync()
-        {
-            var state = await platformUnlockService.GetStateAsync();
-            PlatformUnlockStatus.Text = state.HasSavedPassphrase
-                ? $"{state.Message} Saved unlock is configured."
-                : state.Message;
-            PlatformUnlockButton.IsEnabled = state.IsAvailable && state.HasSavedPassphrase;
-            SavePlatformUnlockButton.IsEnabled = state.IsAvailable;
-            RemovePlatformUnlockButton.IsEnabled = state.HasSavedPassphrase;
-        }
-
-        private void SetUnlockedUi(bool isUnlocked)
-        {
-            UnlockPane.Visibility = isUnlocked ? Visibility.Collapsed : Visibility.Visible;
-            SearchBox.IsEnabled = isUnlocked;
-            WorkspaceFilterBox.IsEnabled = isUnlocked;
-            EnvironmentFilterBox.IsEnabled = isUnlocked;
-            SecretsList.IsEnabled = isUnlocked;
-            NewSecretButton.IsEnabled = isUnlocked;
-            EditorExpander.IsEnabled = isUnlocked;
-            ExportButton.IsEnabled = isUnlocked && Secrets.Count > 0;
-            if (!isUnlocked)
-            {
-                EditorExpander.IsExpanded = false;
-                SetSelectionActions(false);
-            }
+            importEnvironment = environment;
+            ImportDevToggle.IsChecked = environment == "Dev";
+            ImportStagingToggle.IsChecked = environment == "Staging";
+            ImportProdToggle.IsChecked = environment == "Prod";
         }
 
         private void SetSelectionActions(bool hasSelection)
         {
-            if (EditButton is null || CopyButton is null || DeleteButton is null || ExportButton is null)
-            {
-                return;
-            }
-
-            EditButton.IsEnabled = hasSelection && vaultService.IsUnlocked;
-            CopyButton.IsEnabled = hasSelection && vaultService.IsUnlocked;
-            DeleteButton.IsEnabled = hasSelection && vaultService.IsUnlocked;
-            ExportButton.IsEnabled = vaultService.IsUnlocked && Secrets.Count > 0;
+            EditButton.IsEnabled = hasSelection;
+            CopyButton.IsEnabled = hasSelection;
+            DeleteButton.IsEnabled = hasSelection;
+            ExportButton.IsEnabled = Secrets.Count > 0;
         }
 
         private void RefreshWorkspaceChoices()
         {
-            var values = allRecords
-                .Select(record => record.Workspace)
-                .Append("Default")
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Order(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            foreach (var workspace in allRecords.Select(record => record.Workspace))
+            {
+                if (!workspaces.Contains(workspace, StringComparer.OrdinalIgnoreCase))
+                {
+                    workspaces.Add(workspace);
+                }
+            }
 
-            ReplaceComboItems(WorkspaceBox, values, SelectedWorkspace());
-            ReplaceComboItems(WorkspaceFilterBox, ["All", .. values], SelectedWorkspaceFilter().Length == 0 ? "All" : SelectedWorkspaceFilter());
+            workspaces.Sort(StringComparer.OrdinalIgnoreCase);
+            RefreshWorkspaceCombos(SelectedWorkspace(WorkspaceBox));
+        }
+
+        private void RefreshWorkspaceCombos(string selected)
+        {
+            ReplaceComboItems(WorkspaceBox, [.. workspaces, "Add workspace..."], selected);
+            ReplaceComboItems(ImportWorkspaceBox, workspaces, selected);
         }
 
         private static void ReplaceComboItems(ComboBox comboBox, IReadOnlyList<string> values, string selected)
         {
             comboBox.Items.Clear();
-            foreach (var value in values)
+            foreach (var value in values.Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 comboBox.Items.Add(new ComboBoxItem { Content = value });
             }
@@ -513,6 +383,20 @@ namespace ShushVault.Windows.Views
             }
         }
 
+        private static string SelectedWorkspace(ComboBox comboBox)
+        {
+            var value = (comboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Default";
+            return value == "Add workspace..." ? "Default" : value;
+        }
+
+        private ImportConflictMode SelectedConflictMode()
+            => ((ConflictBox.SelectedItem as ComboBoxItem)?.Content?.ToString()) switch
+            {
+                "Overwrite" => ImportConflictMode.Overwrite,
+                "Rename" => ImportConflictMode.Rename,
+                _ => ImportConflictMode.Skip
+            };
+
         private static async Task ClearClipboardLaterAsync(string expectedText, int clearSeconds)
         {
             if (clearSeconds <= 0)
@@ -528,66 +412,25 @@ namespace ShushVault.Windows.Views
             }
 
             var current = await content.GetTextAsync();
-            if (current != expectedText)
+            if (current == expectedText)
             {
-                return;
+                Clipboard.SetContent(new DataPackage());
             }
-
-            Clipboard.SetContent(new DataPackage());
-        }
-
-        private int SelectedClipboardClearSeconds()
-        {
-            if (ClipboardClearBox?.SelectedItem is ComboBoxItem item &&
-                int.TryParse(item.Tag?.ToString(), out var seconds))
-            {
-                return seconds;
-            }
-
-            return 30;
         }
 
         private static string ClipboardStatus(string prefix, int clearSeconds)
             => clearSeconds > 0
                 ? $"{prefix} Clipboard clears in {clearSeconds}s."
                 : $"{prefix} Clipboard auto-clear is off.";
-
-        private string SelectedWorkspace()
-            => (WorkspaceBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Default";
-
-        private string SelectedWorkspaceFilter()
-        {
-            var value = (WorkspaceFilterBox?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All";
-            return value == "All" ? string.Empty : value;
-        }
-
-        private string SelectedEnvironment()
-            => (EnvironmentBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Dev";
-
-        private string SelectedFilterEnvironment()
-            => (EnvironmentFilterBox?.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All";
-
-        private ImportConflictMode SelectedConflictMode()
-            => ((ConflictBox.SelectedItem as ComboBoxItem)?.Content?.ToString()) switch
-            {
-                "Overwrite" => ImportConflictMode.Overwrite,
-                "Rename" => ImportConflictMode.Rename,
-                _ => ImportConflictMode.Skip
-            };
     }
 
     public sealed class SecretListItem
     {
         public string Id { get; set; } = string.Empty;
-
         public string Workspace { get; set; } = string.Empty;
-
         public string Name { get; set; } = string.Empty;
-
         public string Environment { get; set; } = string.Empty;
-
         public string Provider { get; set; } = string.Empty;
-
         public string MaskedValue { get; set; } = string.Empty;
 
         public static SecretListItem From(SecretRecord record)
@@ -602,22 +445,16 @@ namespace ShushVault.Windows.Views
             };
 
         private static string Mask(string value)
-        {
-            if (value.Length <= 4)
-            {
-                return new string('•', Math.Max(value.Length, 1));
-            }
-
-            return $"{new string('•', Math.Min(value.Length, 12))}{value[^4..]}";
-        }
+            => value.Length <= 4
+                ? new string('•', Math.Max(value.Length, 1))
+                : $"{new string('•', Math.Min(value.Length, 12))}{value[^4..]}";
     }
 
     public sealed class ImportPreviewListItem
     {
         public string Line { get; set; } = string.Empty;
-
         public string Key { get; set; } = string.Empty;
-
+        public string MaskedValue { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
 
         public static ImportPreviewListItem From(ImportPreviewItem item)
@@ -625,6 +462,7 @@ namespace ShushVault.Windows.Views
             {
                 Line = item.Line.ToString(),
                 Key = string.IsNullOrWhiteSpace(item.Key) ? "-" : item.Key,
+                MaskedValue = string.IsNullOrWhiteSpace(item.Value) ? "-" : SecretListItem.From(SecretRecord.Create("Default", item.Key, item.Value, "Dev", "", "")).MaskedValue,
                 Status = item.Status.ToString()
             };
     }

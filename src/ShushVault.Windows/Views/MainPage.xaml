@@ -28,394 +28,272 @@
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="1" Padding="24,16,24,20" RowSpacing="12">
+        <Grid Grid.Row="1" Padding="22" RowSpacing="12">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Grid ColumnSpacing="10">
+            <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-
                 <StackPanel Orientation="Horizontal" Spacing="10">
-                    <Image Width="28" Height="28" Source="ms-appx:///Assets/Square44x44Logo.scale-200.png" />
+                    <Image Width="24" Height="24" Source="ms-appx:///Assets/Square44x44Logo.scale-200.png" />
                     <TextBlock
                         VerticalAlignment="Center"
-                        FontSize="24"
+                        FontSize="20"
                         FontWeight="SemiBold"
                         Text="Secrets" />
                 </StackPanel>
-                <TextBlock
-                    x:Name="VaultStateText"
+                <Button
+                    x:Name="NewSecretButton"
                     Grid.Column="1"
-                    VerticalAlignment="Center"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="Locked" />
+                    Content="New secret"
+                    Click="OnNewSecretClicked"
+                    Style="{StaticResource PrimaryAction}" />
                 <Button
                     Grid.Column="2"
+                    Margin="8,0,0,0"
+                    Content="Import .env"
+                    Click="OnImportEnvClicked" />
+                <Button
+                    Grid.Column="3"
                     Margin="8,0,0,0"
                     Click="OnSettingsClicked">
                     <FontIcon FontSize="16" Glyph="&#xE713;" />
                 </Button>
             </Grid>
 
-            <Grid Grid.Row="1" ColumnSpacing="10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="170" />
-                    <ColumnDefinition Width="132" />
-                </Grid.ColumnDefinitions>
-                <TextBox
-                    x:Name="SearchBox"
-                    PlaceholderText="Search secrets"
-                    TextChanged="OnFilterChanged" />
-                <ComboBox
-                    x:Name="WorkspaceFilterBox"
-                    Grid.Column="1"
-                    PlaceholderText="Workspace"
-                    SelectionChanged="OnFilterChanged" />
-                <ComboBox
-                    x:Name="EnvironmentFilterBox"
-                    Grid.Column="2"
-                    SelectedIndex="0"
-                    SelectionChanged="OnFilterChanged">
-                    <ComboBoxItem Content="All" />
-                    <ComboBoxItem Content="Dev" />
-                    <ComboBoxItem Content="Staging" />
-                    <ComboBoxItem Content="Prod" />
-                </ComboBox>
+            <TextBox
+                x:Name="SearchBox"
+                Grid.Row="1"
+                PlaceholderText="Search secrets"
+                TextChanged="OnFilterChanged" />
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+                <Button x:Name="FilterDevButton" Content="Dev" Click="OnFilterEnvironmentClicked" />
+                <Button x:Name="FilterStagingButton" Content="Staging" Click="OnFilterEnvironmentClicked" />
+                <Button x:Name="FilterProdButton" Content="Prod" Click="OnFilterEnvironmentClicked" />
+                <Button x:Name="FilterAllButton" Content="All" Click="OnFilterEnvironmentClicked" />
+            </StackPanel>
+
+            <Grid Grid.Row="3">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid
+                    Padding="10,8"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="130" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock FontSize="12" FontWeight="SemiBold" Text="Key" />
+                    <TextBlock Grid.Column="1" FontSize="12" FontWeight="SemiBold" Text="Value" />
+                    <TextBlock Grid.Column="2" FontSize="12" FontWeight="SemiBold" Text="Environment" />
+                    <TextBlock Grid.Column="3" FontSize="12" FontWeight="SemiBold" Text="Provider" />
+                </Grid>
+
+                <ListView
+                    x:Name="SecretsList"
+                    Grid.Row="1"
+                    ItemsSource="{x:Bind Secrets, Mode=OneWay}"
+                    SelectionChanged="OnSecretSelectionChanged"
+                    SelectionMode="Single">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="views:SecretListItem">
+                            <Grid Padding="10,10" ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="2*" />
+                                    <ColumnDefinition Width="2*" />
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="130" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" />
+                                <TextBlock Grid.Column="1" Text="{x:Bind MaskedValue}" />
+                                <TextBlock Grid.Column="2" Text="{x:Bind Environment}" />
+                                <TextBlock
+                                    Grid.Column="3"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{x:Bind Provider}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
             </Grid>
 
-            <ListView
-                x:Name="SecretsList"
-                Grid.Row="2"
-                ItemsSource="{x:Bind Secrets, Mode=OneWay}"
-                SelectionChanged="OnSecretSelectionChanged"
-                SelectionMode="Single">
-                <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="views:SecretListItem">
-                        <Grid Padding="14,12" ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="1.5*" />
-                                <ColumnDefinition Width="140" />
-                                <ColumnDefinition Width="120" />
-                                <ColumnDefinition Width="170" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="3">
-                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" />
-                                <TextBlock
-                                    FontSize="12"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    Text="{x:Bind MaskedValue}" />
-                            </StackPanel>
-                            <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="{x:Bind Workspace}" />
-                            <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="{x:Bind Environment}" />
-                            <TextBlock
-                                Grid.Column="3"
-                                VerticalAlignment="Center"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Text="{x:Bind Provider}" />
-                        </Grid>
-                    </DataTemplate>
-                </ListView.ItemTemplate>
-            </ListView>
-
-            <Grid Grid.Row="3" ColumnSpacing="10">
+            <Grid Grid.Row="4" ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Button
-                    x:Name="NewSecretButton"
-                    Content="New secret"
-                    Click="OnNewSecretClicked"
-                    Style="{StaticResource PrimaryAction}" />
-                <Button
-                    x:Name="EditButton"
-                    Grid.Column="1"
-                    Content="Edit"
-                    Click="OnEditClicked"
-                    IsEnabled="False" />
-                <Button
-                    x:Name="CopyButton"
-                    Grid.Column="2"
-                    Content="Copy"
-                    Click="OnCopyClicked"
-                    IsEnabled="False" />
-                <Button
-                    x:Name="DeleteButton"
-                    Grid.Column="3"
-                    Content="Delete"
-                    Click="OnDeleteClicked"
-                    IsEnabled="False" />
-                <Button
-                    x:Name="ExportButton"
-                    Grid.Column="4"
-                    Content="Export .env"
-                    Click="OnExportClicked"
-                    IsEnabled="False" />
+                <Button x:Name="EditButton" Content="Edit" Click="OnEditClicked" IsEnabled="False" />
+                <Button x:Name="CopyButton" Grid.Column="1" Content="Copy value" Click="OnCopyClicked" IsEnabled="False" />
+                <Button x:Name="DeleteButton" Grid.Column="2" Content="Delete" Click="OnDeleteClicked" IsEnabled="False" />
+                <Button x:Name="ExportButton" Grid.Column="3" Content="Export .env" Click="OnExportClicked" IsEnabled="False" />
                 <TextBlock
                     x:Name="StatusText"
-                    Grid.Column="5"
+                    Grid.Column="4"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="No secrets saved yet." />
+                    Text="Encrypted vault ready." />
             </Grid>
 
-            <Expander
-                x:Name="EditorExpander"
-                Grid.Row="4"
-                Header="Add secret">
-                <Grid Padding="0,12,0,0" ColumnSpacing="18">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
+            <Grid
+                x:Name="DialogLayer"
+                Grid.Row="0"
+                Grid.RowSpan="5"
+                Background="#99000000"
+                Visibility="Collapsed">
+                <Border
+                    x:Name="SecretDialog"
+                    Width="520"
+                    Padding="16"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="12"
+                    Visibility="Collapsed">
                     <StackPanel Spacing="10">
-                        <Grid ColumnSpacing="10">
+                        <TextBlock x:Name="SecretDialogTitle" FontWeight="SemiBold" Text="New Secret" />
+                        <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="130" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ComboBox x:Name="WorkspaceBox" Header="Workspace *" SelectedIndex="0">
+                            <ComboBox x:Name="WorkspaceBox" PlaceholderText="Workspace" SelectedIndex="0">
                                 <ComboBoxItem Content="Default" />
+                                <ComboBoxItem Content="Add workspace..." />
                             </ComboBox>
-                            <ComboBox x:Name="EnvironmentBox" Grid.Column="1" Header="Environment" SelectedIndex="0">
-                                <ComboBoxItem Content="Dev" />
-                                <ComboBoxItem Content="Staging" />
-                                <ComboBoxItem Content="Prod" />
-                            </ComboBox>
+                            <Button Grid.Column="1" Content="+" Click="OnAddWorkspaceClicked" />
                         </Grid>
-                        <TextBox x:Name="NameBox" Header="Key *" PlaceholderText="OPENAI_API_KEY" />
-                        <PasswordBox x:Name="ValueBox" Header="Value *" PlaceholderText="paste a token or key" />
-                        <TextBox x:Name="ProviderBox" Header="Provider (optional)" PlaceholderText="OpenAI, Stripe, Vercel" />
-                        <TextBox
-                            x:Name="NotesBox"
-                            Header="Notes (optional)"
-                            AcceptsReturn="True"
-                            MinHeight="72"
-                            TextWrapping="Wrap" />
-                        <Grid ColumnSpacing="10">
+                        <TextBox x:Name="NameBox" PlaceholderText="Key (e.g. OPENAI_API_KEY)" />
+                        <PasswordBox x:Name="ValueBox" PlaceholderText="Secret value" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <ToggleButton x:Name="DevToggle" Content="Dev" IsChecked="True" Click="OnSecretEnvironmentClicked" />
+                            <ToggleButton x:Name="StagingToggle" Content="Staging" Click="OnSecretEnvironmentClicked" />
+                            <ToggleButton x:Name="ProdToggle" Content="Prod" Click="OnSecretEnvironmentClicked" />
+                        </StackPanel>
+                        <TextBox x:Name="ProviderBox" PlaceholderText="Provider (optional)" />
+                        <TextBox x:Name="NotesBox" PlaceholderText="Notes (optional)" />
+                        <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Button
-                                x:Name="SaveButton"
-                                Content="Save"
-                                Click="OnSaveClicked"
-                                Style="{StaticResource PrimaryAction}" />
-                            <Button
-                                Grid.Column="1"
-                                Content="Clear"
-                                Click="OnClearClicked" />
+                            <Button Grid.Column="1" Content="Cancel" Click="OnCloseDialogClicked" />
+                            <Button x:Name="SaveButton" Grid.Column="2" Content="Save" Click="OnSaveClicked" Style="{StaticResource PrimaryAction}" />
                         </Grid>
                     </StackPanel>
+                </Border>
 
-                    <StackPanel Grid.Column="1" Spacing="10">
-                        <TextBlock
-                            FontWeight="SemiBold"
-                            Text="Import .env" />
-                        <Grid ColumnSpacing="10">
+                <Border
+                    x:Name="ImportDialog"
+                    Width="740"
+                    Padding="16"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="12"
+                    Visibility="Collapsed">
+                    <StackPanel Spacing="10">
+                        <TextBlock FontWeight="SemiBold" Text="Import .env" />
+                        <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="170" />
+                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Button Content="Choose .env" Click="OnChooseEnvClicked" />
+                            <ComboBox x:Name="ImportWorkspaceBox" PlaceholderText="Workspace" SelectedIndex="0">
+                                <ComboBoxItem Content="Default" />
+                            </ComboBox>
                             <ComboBox x:Name="ConflictBox" Grid.Column="1" SelectedIndex="0">
                                 <ComboBoxItem Content="Skip" />
                                 <ComboBoxItem Content="Overwrite" />
                                 <ComboBoxItem Content="Rename" />
                             </ComboBox>
+                            <TextBox x:Name="ImportProviderBox" Grid.Column="2" PlaceholderText="Provider (optional, applied to imported rows)" />
                         </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <ToggleButton x:Name="ImportDevToggle" Content="Dev" IsChecked="True" Click="OnImportEnvironmentClicked" />
+                            <ToggleButton x:Name="ImportStagingToggle" Content="Staging" Click="OnImportEnvironmentClicked" />
+                            <ToggleButton x:Name="ImportProdToggle" Content="Prod" Click="OnImportEnvironmentClicked" />
+                        </StackPanel>
                         <TextBox
                             x:Name="EnvImportBox"
                             AcceptsReturn="True"
-                            MinHeight="112"
+                            MinHeight="150"
                             PlaceholderText="Paste KEY=value lines"
                             TextChanged="OnEnvImportTextChanged"
                             TextWrapping="Wrap" />
-                        <Button Content="Import previewed entries" Click="OnImportClicked" />
-                        <ListView
-                            MaxHeight="142"
-                            ItemsSource="{x:Bind ImportPreview, Mode=OneWay}"
-                            SelectionMode="None">
+                        <TextBlock FontWeight="SemiBold" Text="Preview" />
+                        <ListView MaxHeight="170" ItemsSource="{x:Bind ImportPreview, Mode=OneWay}" SelectionMode="None">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="views:ImportPreviewListItem">
                                     <Grid Padding="8,5" ColumnSpacing="8">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="42" />
                                             <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="86" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="90" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Line}" />
                                         <TextBlock Grid.Column="1" Text="{x:Bind Key}" />
-                                        <TextBlock
-                                            Grid.Column="2"
-                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                            Text="{x:Bind Status}" />
+                                        <TextBlock Grid.Column="2" Text="{x:Bind MaskedValue}" />
+                                        <TextBlock Grid.Column="3" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind Status}" />
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
                         </ListView>
-                    </StackPanel>
-                </Grid>
-            </Expander>
-
-            <Grid
-                x:Name="UnlockPane"
-                Grid.Row="1"
-                Grid.RowSpan="4"
-                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-                <StackPanel
-                    Width="420"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Spacing="12">
-                    <Image Width="56" Height="56" Source="ms-appx:///Assets/Square44x44Logo.scale-200.png" />
-                    <TextBlock
-                        HorizontalAlignment="Center"
-                        FontSize="22"
-                        FontWeight="SemiBold"
-                        Text="Unlock your vault" />
-                    <TextBlock
-                        HorizontalAlignment="Center"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="Enter your vault passphrase. If this is your first time, choose a new passphrase and save your first secret."
-                        TextAlignment="Center"
-                        TextWrapping="Wrap" />
-                    <PasswordBox
-                        x:Name="PassphraseBox"
-                        PlaceholderText="Vault passphrase" />
-                    <Grid ColumnSpacing="10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Button
-                            HorizontalAlignment="Stretch"
-                            Content="Unlock"
-                            Click="OnUnlockClicked"
-                            Style="{StaticResource PrimaryAction}" />
-                        <Button
-                            x:Name="PlatformUnlockButton"
-                            Grid.Column="1"
-                            HorizontalAlignment="Stretch"
-                            Content="Windows Hello"
-                            Click="OnPlatformUnlockClicked" />
-                    </Grid>
-                    <TextBlock
-                        x:Name="PlatformUnlockStatus"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="Checking platform unlock..."
-                        TextAlignment="Center"
-                        TextWrapping="Wrap" />
-                </StackPanel>
-            </Grid>
-
-            <Grid
-                x:Name="SettingsOverlay"
-                Grid.Row="0"
-                Grid.RowSpan="5"
-                Background="#99000000"
-                Visibility="Collapsed">
-                <Border
-                    Width="560"
-                    Padding="22"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    CornerRadius="8">
-                    <StackPanel Spacing="16">
-                        <Grid>
+                        <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock
-                                FontSize="20"
-                                FontWeight="SemiBold"
-                                Text="Settings" />
-                            <Button
-                                Grid.Column="1"
-                                Click="OnCloseSettingsClicked">
-                                <FontIcon FontSize="14" Glyph="&#xE711;" />
-                            </Button>
+                            <Button Grid.Column="1" Content="Cancel" Click="OnCloseDialogClicked" />
+                            <Button Grid.Column="2" Content="Import" Click="OnImportClicked" Style="{StaticResource PrimaryAction}" />
                         </Grid>
+                    </StackPanel>
+                </Border>
 
-                        <StackPanel Spacing="8">
-                            <TextBlock FontWeight="SemiBold" Text="Vault" />
-                            <TextBlock
-                                x:Name="VaultPathText"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                TextTrimming="CharacterEllipsis" />
-                            <Button
-                                Content="Lock vault"
-                                Click="OnLockClicked" />
-                        </StackPanel>
-
-                        <StackPanel Spacing="8">
-                            <TextBlock FontWeight="SemiBold" Text="Windows Hello" />
-                            <TextBlock
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Text="Save your vault passphrase in Windows Credential Manager after Windows Hello or PIN verification." />
-                            <PasswordBox
-                                x:Name="SettingsPassphraseBox"
-                                PlaceholderText="Vault passphrase" />
-                            <Grid ColumnSpacing="10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Button
-                                    x:Name="SavePlatformUnlockButton"
-                                    Content="Save current passphrase"
-                                    Click="OnSavePlatformUnlockClicked" />
-                                <Button
-                                    x:Name="RemovePlatformUnlockButton"
-                                    Grid.Column="1"
-                                    Content="Remove saved unlock"
-                                    Click="OnRemovePlatformUnlockClicked" />
-                            </Grid>
-                        </StackPanel>
-
-                        <StackPanel Spacing="8">
-                            <TextBlock FontWeight="SemiBold" Text="Clipboard" />
-                            <Grid ColumnSpacing="10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="180" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <ComboBox
-                                    x:Name="ClipboardClearBox"
-                                    Header="Auto-clear"
-                                    SelectedIndex="1">
-                                    <ComboBoxItem Content="15 seconds" Tag="15" />
-                                    <ComboBoxItem Content="30 seconds" Tag="30" />
-                                    <ComboBoxItem Content="60 seconds" Tag="60" />
-                                    <ComboBoxItem Content="Never" Tag="0" />
-                                </ComboBox>
-                                <TextBlock
-                                    Grid.Column="1"
-                                    VerticalAlignment="Bottom"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    Text="Applies to copied secret values and .env exports." />
-                            </Grid>
-                        </StackPanel>
+                <Border
+                    x:Name="WorkspaceDialog"
+                    Width="360"
+                    Padding="16"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="12"
+                    Visibility="Collapsed">
+                    <StackPanel Spacing="10">
+                        <TextBlock FontWeight="SemiBold" Text="New Workspace" />
+                        <TextBox x:Name="NewWorkspaceBox" PlaceholderText="Workspace name" />
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="1" Content="Cancel" Click="OnCancelWorkspaceClicked" />
+                            <Button Grid.Column="2" Content="Create" Click="OnCreateWorkspaceClicked" Style="{StaticResource PrimaryAction}" />
+                        </Grid>
                     </StackPanel>
                 </Border>
             </Grid>
