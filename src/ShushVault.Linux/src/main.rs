@@ -6,8 +6,8 @@ use std::rc::Rc;
 use gtk::gdk::Display;
 use gtk::prelude::*;
 use gtk::{
-    glib, Application, ApplicationWindow, Box, Button, ComboBoxText, Entry, Label, ListBox,
-    Orientation, PasswordEntry, ScrolledWindow, TextView,
+    glib, Application, ApplicationWindow, Box, Button, ComboBoxText, Entry, Expander, Label,
+    ListBox, Orientation, PasswordEntry, ScrolledWindow, TextView,
 };
 use shush_vault_core::{decrypt_vault, encrypt_vault, EncryptedVault, SecretRecord, Vault};
 
@@ -55,11 +55,22 @@ fn build_ui(app: &Application) {
     let editor = Box::new(Orientation::Vertical, 12);
     let title = Label::new(Some("shush vault"));
     title.add_css_class("title-1");
+    title.set_xalign(0.0);
 
     let passphrase = PasswordEntry::builder()
         .placeholder_text("Vault passphrase")
         .build();
     let unlock = Button::with_label("Unlock");
+    let lock = Button::with_label("Lock");
+    let settings = Box::new(Orientation::Horizontal, 8);
+    settings.append(&passphrase);
+    settings.append(&unlock);
+    settings.append(&lock);
+    let settings_expander = Expander::builder()
+        .label("Settings")
+        .child(&settings)
+        .build();
+
     let workspace = Entry::builder()
         .placeholder_text("Workspace")
         .text("Default")
@@ -106,9 +117,6 @@ fn build_ui(app: &Application) {
     status.set_xalign(0.0);
     status.set_wrap(true);
 
-    editor.append(&title);
-    editor.append(&passphrase);
-    editor.append(&unlock);
     editor.append(&workspace);
     editor.append(&key);
     editor.append(&value);
@@ -120,7 +128,10 @@ fn build_ui(app: &Application) {
     editor.append(&conflict);
     editor.append(&import_scroll);
     editor.append(&import_actions);
-    editor.append(&status);
+    let editor_expander = Expander::builder()
+        .label("Edit or import")
+        .child(&editor)
+        .build();
 
     let list_panel = Box::new(Orientation::Vertical, 12);
     let search = Entry::builder().placeholder_text("Search secrets").build();
@@ -216,6 +227,35 @@ fn build_ui(app: &Application) {
                 }
                 Err(_) => status.set_text("Could not unlock vault."),
             }
+        }
+    ));
+
+    lock.connect_clicked(glib::clone!(
+        @weak list,
+        @weak status,
+        @weak search,
+        @weak workspace_filter,
+        @weak environment_filter,
+        @strong vault,
+        @strong passphrase_state,
+        @strong selected_id,
+        @strong editing_id,
+        @strong visible_ids
+        => move |_| {
+            *vault.borrow_mut() = Vault::default();
+            passphrase_state.borrow_mut().clear();
+            *selected_id.borrow_mut() = None;
+            *editing_id.borrow_mut() = None;
+            render_list(
+                &list,
+                &vault.borrow(),
+                search.text().as_str(),
+                workspace_filter.text().as_str(),
+                active_environment_filter(&environment_filter).as_deref(),
+                &visible_ids,
+                &selected_id,
+            );
+            status.set_text("Locked.");
         }
     ));
 
@@ -651,8 +691,11 @@ fn build_ui(app: &Application) {
         }
     ));
 
+    root.append(&title);
     root.append(&list_panel);
-    root.append(&editor);
+    root.append(&settings_expander);
+    root.append(&editor_expander);
+    root.append(&status);
 
     let window = ApplicationWindow::builder()
         .application(app)

@@ -78,6 +78,13 @@ final class VaultStore: ObservableObject {
         }
     }
 
+    func lock() {
+        passphrase = ""
+        rows = []
+        isUnlocked = false
+        status = "Locked."
+    }
+
     func add(workspace: String, name: String, value: String, environment: String, provider: String, notes: String) {
         guard isUnlocked else {
             status = "Unlock the vault first."

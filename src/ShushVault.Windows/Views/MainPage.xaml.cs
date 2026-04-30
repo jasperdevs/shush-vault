@@ -22,6 +22,7 @@ namespace ShushVault.Windows.Views
         {
             this.InitializeComponent();
             App.MainWindow.SetTitleBar(TitleBarDragRegion);
+            VaultPathText.Text = vaultService.FilePath;
             _ = LoadSecretsAsync();
         }
 
@@ -52,6 +53,19 @@ namespace ShushVault.Windows.Views
 
             await LoadSecretsAsync();
             StatusText.Text = $"Unlocked {Path.GetFileName(vaultService.FilePath)}.";
+            VaultStateText.Text = "Unlocked";
+        }
+
+        private void OnLockClicked(object sender, RoutedEventArgs e)
+        {
+            vaultService.Lock();
+            allRecords.Clear();
+            Secrets.Clear();
+            ImportPreview.Clear();
+            PassphraseBox.Password = string.Empty;
+            ClearEditor();
+            VaultStateText.Text = "Locked";
+            StatusText.Text = "Locked.";
         }
 
         private async void OnSaveClicked(object sender, RoutedEventArgs e)

@@ -23,14 +23,8 @@ struct ContentView: View {
                     .font(.title2.weight(.semibold))
 
                 Spacer()
-
-                SecureField("Vault passphrase", text: $passphrase)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
-                Button("Unlock") {
-                    store.unlock(passphrase: passphrase)
-                    passphrase = ""
-                }
+                Text(store.isUnlocked ? "Unlocked" : "Locked")
+                    .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 10) {
@@ -155,6 +149,26 @@ struct ContentView: View {
                             }
                             .gridCellColumns(2)
                     }
+                }
+                .padding(.top, 8)
+            }
+
+            DisclosureGroup("Settings") {
+                HStack(spacing: 10) {
+                    SecureField("Vault passphrase", text: $passphrase)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 260)
+                    Button("Unlock") {
+                        store.unlock(passphrase: passphrase)
+                        passphrase = ""
+                    }
+                    Button("Lock") {
+                        store.lock()
+                        passphrase = ""
+                        selectedId = nil
+                        clearEditor()
+                    }
+                    Spacer()
                 }
                 .padding(.top, 8)
             }
