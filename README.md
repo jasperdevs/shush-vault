@@ -110,7 +110,7 @@
     </tr>
     <tr>
       <td>CLI</td>
-      <td><code>shush</code> Rust command for init, add, list, copy, import, and export using the shared encrypted vault core.</td>
+      <td><code>shush</code> Rust command for init, add, get, update, delete, list/search, copy, import, and export using the shared encrypted vault core.</td>
     </tr>
     <tr>
       <td>macOS</td>
@@ -131,10 +131,13 @@
   <pre><code>$env:SHUSH_VAULT_PASSPHRASE="change-me"
 shush init
 shush add OPENAI_API_KEY sk-... --workspace my-app --env Dev
-shush list --workspace my-app --env Dev
+shush list --workspace my-app --env Dev --search openai
+shush get OPENAI_API_KEY --workspace my-app --env Dev
+shush update OPENAI_API_KEY --workspace my-app --env Dev --value sk-new...
 shush copy OPENAI_API_KEY
 shush import .env --workspace my-app --env Dev
-shush export --workspace my-app --env Dev</code></pre>
+shush export --workspace my-app --env Dev
+shush delete OPENAI_API_KEY --workspace my-app --env Dev</code></pre>
 
   <p>MIT</p>
 </div>

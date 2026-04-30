@@ -1,7 +1,7 @@
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Nonce};
-use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use chrono::{DateTime, Utc};
 use pbkdf2::pbkdf2_hmac;
 use rand::RngCore;
@@ -34,7 +34,14 @@ pub struct SecretRecord {
 }
 
 impl SecretRecord {
-    pub fn create(workspace: &str, name: &str, value: &str, environment: &str, provider: &str, notes: &str) -> Self {
+    pub fn create(
+        workspace: &str,
+        name: &str,
+        value: &str,
+        environment: &str,
+        provider: &str,
+        notes: &str,
+    ) -> Self {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
@@ -62,8 +69,87 @@ impl Vault {
         self.records.insert(0, record);
     }
 
+    pub fn update(
+        &mut self,
+        name: &str,
+        workspace: Option<&str>,
+        environment: Option<&str>,
+        value: Option<&str>,
+        provider: Option<&str>,
+        notes: Option<&str>,
+    ) -> bool {
+        let Some(record) = self.find_mut(name, workspace, environment) else {
+            return false;
+        };
+
+        if let Some(value) = value {
+            record.value = value.to_owned();
+        }
+
+        if let Some(provider) = provider {
+            record.provider = provider.trim().to_owned();
+        }
+
+        if let Some(notes) = notes {
+            record.notes = notes.trim().to_owned();
+        }
+
+        record.updated_at = Utc::now();
+        true
+    }
+
+    pub fn delete(
+        &mut self,
+        name: &str,
+        workspace: Option<&str>,
+        environment: Option<&str>,
+    ) -> bool {
+        let before = self.records.len();
+        self.records.retain(|record| {
+            !record.name.eq_ignore_ascii_case(name)
+                || !workspace
+                    .is_none_or(|workspace| record.workspace.eq_ignore_ascii_case(workspace))
+                || !environment
+                    .is_none_or(|environment| record.environment.eq_ignore_ascii_case(environment))
+        });
+        before != self.records.len()
+    }
+
+    pub fn find(
+        &self,
+        name: &str,
+        workspace: Option<&str>,
+        environment: Option<&str>,
+    ) -> Option<&SecretRecord> {
+        self.visible_records().find(|record| {
+            record.name.eq_ignore_ascii_case(name)
+                && workspace
+                    .is_none_or(|workspace| record.workspace.eq_ignore_ascii_case(workspace))
+                && environment
+                    .is_none_or(|environment| record.environment.eq_ignore_ascii_case(environment))
+        })
+    }
+
     pub fn visible_records(&self) -> impl Iterator<Item = &SecretRecord> {
-        self.records.iter().filter(|record| record.deleted_at.is_none())
+        self.records
+            .iter()
+            .filter(|record| record.deleted_at.is_none())
+    }
+
+    fn find_mut(
+        &mut self,
+        name: &str,
+        workspace: Option<&str>,
+        environment: Option<&str>,
+    ) -> Option<&mut SecretRecord> {
+        self.records.iter_mut().find(|record| {
+            record.deleted_at.is_none()
+                && record.name.eq_ignore_ascii_case(name)
+                && workspace
+                    .is_none_or(|workspace| record.workspace.eq_ignore_ascii_case(workspace))
+                && environment
+                    .is_none_or(|environment| record.environment.eq_ignore_ascii_case(environment))
+        })
     }
 }
 
@@ -124,7 +210,10 @@ pub fn encrypt_vault(vault: &Vault, passphrase: &str) -> Result<EncryptedVault, 
 }
 
 pub fn decrypt_vault(encrypted: &EncryptedVault, passphrase: &str) -> Result<Vault, VaultError> {
-    if encrypted.version != FORMAT_VERSION || encrypted.kdf != KDF_NAME || encrypted.cipher != CIPHER_NAME {
+    if encrypted.version != FORMAT_VERSION
+        || encrypted.kdf != KDF_NAME
+        || encrypted.cipher != CIPHER_NAME
+    {
         return Err(VaultError::InvalidPayload);
     }
 
@@ -169,7 +258,14 @@ mod tests {
     #[test]
     fn encrypts_and_decrypts_vault_without_plaintext_leakage() {
         let mut vault = Vault::default();
-        vault.add(SecretRecord::create("Demo", "OPENAI_API_KEY", "sk-secret", "Dev", "OpenAI", "notes"));
+        vault.add(SecretRecord::create(
+            "Demo",
+            "OPENAI_API_KEY",
+            "sk-secret",
+            "Dev",
+            "OpenAI",
+            "notes",
+        ));
 
         let encrypted = encrypt_vault(&vault, "correct horse battery staple").unwrap();
         let serialized = serde_json::to_string(&encrypted).unwrap();
@@ -192,5 +288,27 @@ mod tests {
             decrypt_vault(&encrypted, "wrong"),
             Err(VaultError::DecryptionFailed)
         ));
+    }
+
+    #[test]
+    fn updates_and_deletes_records_by_scope() {
+        let mut vault = Vault::default();
+        vault.add(SecretRecord::create("App", "KEY", "old", "Dev", "", ""));
+
+        assert!(vault.update(
+            "KEY",
+            Some("App"),
+            Some("Dev"),
+            Some("new"),
+            Some("Provider"),
+            Some("notes")
+        ));
+        let record = vault.find("KEY", Some("App"), Some("Dev")).unwrap();
+        assert_eq!(record.value, "new");
+        assert_eq!(record.provider, "Provider");
+        assert_eq!(record.notes, "notes");
+
+        assert!(vault.delete("KEY", Some("App"), Some("Dev")));
+        assert!(vault.find("KEY", Some("App"), Some("Dev")).is_none());
     }
 }
