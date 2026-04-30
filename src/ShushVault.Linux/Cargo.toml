@@ -4,4 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1"
+dirs = "6"
 gtk = { package = "gtk4", version = "0.9" }
+serde_json = "1"
+shush-vault-core = { path = "../../crates/shush-vault-core" }

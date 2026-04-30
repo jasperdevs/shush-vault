@@ -114,11 +114,11 @@
     </tr>
     <tr>
       <td>macOS</td>
-      <td>SwiftUI native source is present, but not claimed as working until it is wired to the shared vault and verified on macOS/Xcode.</td>
+      <td>SwiftUI native source uses the shared encrypted vault format. CI is configured to build it on macOS.</td>
     </tr>
     <tr>
       <td>Linux</td>
-      <td>GTK 4 native source is present, but not claimed as working until it is wired to the shared vault and verified on a Linux GTK toolchain.</td>
+      <td>GTK 4 native source uses the shared encrypted vault crate. CI is configured to check it on Linux with GTK 4 dev libraries.</td>
     </tr>
     <tr>
       <td>Sync</td>

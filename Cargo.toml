@@ -3,4 +3,7 @@ members = [
     "crates/shush",
     "crates/shush-vault-core",
 ]
+exclude = [
+    "src/ShushVault.Linux",
+]
 resolver = "3"

@@ -1,15 +1,8 @@
 import SwiftUI
 
-struct SecretRow: Identifiable {
-    let id = UUID()
-    let workspace: String
-    let environment: String
-    let name: String
-    let provider: String
-    let maskedValue: String
-}
-
 struct ContentView: View {
+    @StateObject private var store = VaultStore()
+    @State private var passphrase = ""
     @State private var workspace = "Default"
     @State private var key = ""
     @State private var value = ""
@@ -17,13 +10,17 @@ struct ContentView: View {
     @State private var provider = ""
     @State private var notes = ""
     @State private var search = ""
-    @State private var rows: [SecretRow] = []
 
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 14) {
                 Text("shush vault")
                     .font(.system(size: 28, weight: .semibold))
+
+                SecureField("Vault passphrase", text: $passphrase)
+                Button("Unlock") {
+                    store.unlock(passphrase: passphrase)
+                }
 
                 TextField("Workspace", text: $workspace)
                 TextField("Key", text: $key)
@@ -38,19 +35,23 @@ struct ContentView: View {
                     .frame(minHeight: 88)
 
                 Button("Save") {
-                    rows.insert(SecretRow(
+                    store.add(
                         workspace: workspace,
-                        environment: environment,
                         name: key,
-                        provider: provider.isEmpty ? "-" : provider,
-                        maskedValue: value.isEmpty ? "•" : String(repeating: "•", count: min(value.count, 12))
-                    ), at: 0)
+                        value: value,
+                        environment: environment,
+                        provider: provider,
+                        notes: notes
+                    )
                     key = ""
                     value = ""
                     provider = ""
                     notes = ""
                 }
                 .buttonStyle(.borderedProminent)
+
+                Text(store.status)
+                    .foregroundStyle(.secondary)
 
                 Spacer()
             }
@@ -74,6 +75,9 @@ struct ContentView: View {
                         Text(row.environment)
                         Text(row.provider)
                             .foregroundStyle(.secondary)
+                        Button("Delete") {
+                            store.delete(row)
+                        }
                     }
                     .padding(.vertical, 6)
                 }
@@ -84,12 +88,13 @@ struct ContentView: View {
 
     private var filteredRows: [SecretRow] {
         if search.isEmpty {
-            return rows
+            return store.rows
         }
 
-        return rows.filter {
+        return store.rows.filter {
             $0.name.localizedCaseInsensitiveContains(search) ||
-            $0.provider.localizedCaseInsensitiveContains(search)
+            $0.provider.localizedCaseInsensitiveContains(search) ||
+            $0.notes.localizedCaseInsensitiveContains(search)
         }
     }
 }

@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust tests
+        run: cargo test
+      - name: .NET tests
+        run: dotnet test ShushVault.sln -c Debug -p:Platform=x64
+      - name: Windows package
+        shell: pwsh
+        run: ./scripts/package-windows.ps1 -Version 0.1.${{ github.run_number }}
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install GTK
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev
+      - name: Rust tests
+        run: cargo test
+      - name: Linux app check
+        run: cargo check --manifest-path src/ShushVault.Linux/Cargo.toml
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust tests
+        run: cargo test
+      - name: macOS app build
+        run: swift build --package-path src/ShushVault.Mac

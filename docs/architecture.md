@@ -7,8 +7,8 @@ Shush Vault is native-first and Windows-first during development, with one produ
 | Platform | UI | Status |
 | --- | --- | --- |
 | Windows | WinUI 3 | runnable on this machine |
-| macOS | SwiftUI | native source present; not claimed working until shared-vault wiring and macOS build verification are done |
-| Linux | GTK 4 / libadwaita | native source present; not claimed working until shared-vault wiring and Linux build verification are done |
+| macOS | SwiftUI | shared-vault source present; macOS CI build configured |
+| Linux | GTK 4 / libadwaita | shared-vault source present; Linux GTK CI check configured |
 
 Electron is intentionally not used.
 
