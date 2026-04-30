@@ -26,7 +26,7 @@ Every platform works around the same record shape:
 - `createdAt`
 - `updatedAt`
 
-This is sync-ready because each record has a stable ID and timestamps. The Rust CLI and Windows app now use the same portable encrypted vault envelope: PBKDF2-SHA256 key derivation, AES-256-GCM encryption, base64 salt/nonce/ciphertext, and JSON metadata.
+The record model is designed for sync because each record has a stable ID and timestamps. The Rust CLI and Windows app now use the same portable encrypted vault envelope: PBKDF2-SHA256 key derivation, AES-256-GCM encryption, base64 salt/nonce/ciphertext, and JSON metadata.
 
 ## Sync plan
 

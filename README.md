@@ -12,11 +12,11 @@
   </p>
 
   <p>
-    Shush Vault is a local-first vault for storing, organizing, importing, and copying secrets and API keys across macOS, Windows, and Linux.
-    The repo is native-first: WinUI 3 on Windows, SwiftUI on macOS, GTK/libadwaita on Linux, and a shared vault/sync model underneath.
+    Shush Vault is a local-first vault for storing, organizing, importing, and copying secrets and API keys from a native desktop app and CLI.
+    The repo is native-first: WinUI 3 on Windows, SwiftUI on macOS, GTK/libadwaita on Linux, and a shared encrypted vault model underneath.
   </p>
 
-  <h2>what it should do</h2>
+  <h2>features</h2>
 
   <table>
     <tr>
@@ -83,7 +83,7 @@
     <tr>
       <td>UI</td>
       <td>OS-native UI</td>
-      <td>Each platform should look like it belongs there instead of sharing a web shell.</td>
+      <td>Each platform uses its own native UI instead of sharing a web shell.</td>
     </tr>
     <tr>
       <td>Storage</td>
@@ -122,7 +122,7 @@
     </tr>
     <tr>
       <td>Sync</td>
-      <td>Data model and Rust vault format are sync-ready. E2E sync transport is designed but not connected yet.</td>
+      <td>The record model has stable IDs and timestamps for future sync. E2E sync transport is not connected yet.</td>
     </tr>
   </table>
 
