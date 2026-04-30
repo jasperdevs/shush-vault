@@ -1,7 +1,14 @@
 node_modules/
+.omx/
+artifacts/
+bin/
+obj/
+**/bin/
+**/obj/
 dist/
 build/
 coverage/
+target/
 .env
 .env.*
 !.env.example

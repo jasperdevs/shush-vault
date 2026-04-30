@@ -13,7 +13,7 @@
 
   <p>
     Shush Vault is a local-first vault for storing, organizing, importing, and copying secrets and API keys across macOS, Windows, and Linux.
-    The desktop app and CLI should share the same encrypted Rust core so secrets behave the same everywhere.
+    The repo is native-first: WinUI 3 on Windows, SwiftUI on macOS, GTK/libadwaita on Linux, and a shared vault/sync model underneath.
   </p>
 
   <h2>what it should do</h2>
@@ -52,7 +52,7 @@
       <td><img src="https://placehold.co/640x360/151515/e8e8e8?text=.env+Import" alt=".env import placeholder" width="360"></td>
     </tr>
     <tr>
-      <td>CLI for init, add, list, copy, import, export, lock, and unlock</td>
+      <td>CLI for init, add, list, copy, import, and export</td>
       <td><img src="https://placehold.co/640x360/151515/e8e8e8?text=CLI" alt="CLI placeholder" width="360"></td>
     </tr>
   </table>
@@ -67,13 +67,13 @@
     </tr>
     <tr>
       <td>Desktop shell</td>
-      <td>Electron</td>
-      <td>Fastest path to a polished cross-platform desktop app with mature packaging for macOS, Windows, and Linux.</td>
+      <td>Native per OS</td>
+      <td>WinUI 3 for Windows, SwiftUI for macOS, GTK/libadwaita for Linux. No Electron.</td>
     </tr>
     <tr>
       <td>Core logic</td>
-      <td>Rust workspace crate</td>
-      <td>One shared vault engine for the desktop app and CLI, with encryption kept outside the UI layer.</td>
+      <td>Rust vault core plus matching .NET adapter</td>
+      <td>Shared encrypted vault format using PBKDF2-SHA256 and AES-256-GCM so the Windows app and CLI can read the same vault file.</td>
     </tr>
     <tr>
       <td>CLI</td>
@@ -82,8 +82,8 @@
     </tr>
     <tr>
       <td>UI</td>
-      <td>React + TypeScript</td>
-      <td>Simple to build the table, dialogs, filters, import preview, and settings screens.</td>
+      <td>OS-native UI</td>
+      <td>Each platform should look like it belongs there instead of sharing a web shell.</td>
     </tr>
     <tr>
       <td>Storage</td>
@@ -97,14 +97,44 @@
     </tr>
   </table>
 
+  <h2>status</h2>
+
+  <table>
+    <tr>
+      <th>Area</th>
+      <th>Status</th>
+    </tr>
+    <tr>
+      <td>Windows app</td>
+      <td>WinUI 3 app with custom titlebar, monochrome UI, shared encrypted vault storage, CRUD, search/filter, copy, .env import/export, and Velopack packaging.</td>
+    </tr>
+    <tr>
+      <td>CLI</td>
+      <td><code>shush</code> Rust command for init, add, list, copy, import, and export using the shared encrypted vault core.</td>
+    </tr>
+    <tr>
+      <td>macOS</td>
+      <td>SwiftUI native source is present, but it is not release-ready until it is wired to the shared vault and verified on macOS/Xcode.</td>
+    </tr>
+    <tr>
+      <td>Linux</td>
+      <td>GTK 4 native source is present, but it is not release-ready until it is wired to the shared vault and verified on a Linux GTK toolchain.</td>
+    </tr>
+    <tr>
+      <td>Sync</td>
+      <td>Data model and Rust vault format are sync-ready. E2E sync transport is designed but not connected yet.</td>
+    </tr>
+  </table>
+
   <h2>starter CLI shape</h2>
 
-  <pre><code>shush init
-shush add OPENAI_API_KEY
-shush list --workspace my-app
+  <pre><code>$env:SHUSH_VAULT_PASSPHRASE="change-me"
+shush init
+shush add OPENAI_API_KEY sk-... --workspace my-app --env Dev
+shush list --workspace my-app --env Dev
 shush copy OPENAI_API_KEY
-shush import .env --workspace my-app --env dev
-shush export --format env</code></pre>
+shush import .env --workspace my-app --env Dev
+shush export --workspace my-app --env Dev</code></pre>
 
   <p>MIT</p>
 </div>

@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "ShushVault.Windows (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "ShushVault.Windows (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
