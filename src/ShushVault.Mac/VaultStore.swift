@@ -120,7 +120,7 @@ final class VaultStore: ObservableObject {
         }
     }
 
-    private static func defaultVaultURL() -> URL {
+    nonisolated private static func defaultVaultURL() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser
         return base.appendingPathComponent("ShushVault", isDirectory: true).appendingPathComponent("vault.shush")
