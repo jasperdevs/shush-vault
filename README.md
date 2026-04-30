@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/shush-vault-logo.svg" alt="shush vault logo" width="128" />
+  <img src="assets/shush-vault-logo.png" alt="shush vault logo" width="128" />
 
   <h1>🤫 shush vault</h1>
 

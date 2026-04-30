@@ -18,4 +18,5 @@ dotnet vpk pack `
     --packVersion $Version `
     --packDir .\artifacts\ShushVault.Windows `
     --mainExe ShushVault.Windows.exe `
+    --icon .\assets\icon.ico `
     --outputDir .\artifacts\velopack

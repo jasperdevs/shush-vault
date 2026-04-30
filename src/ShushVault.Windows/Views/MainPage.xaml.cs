@@ -1,19 +1,34 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.Net.Http;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Xaml;
 using ShushVault.Core;
 using ShushVault.Windows;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage;
+using Windows.Storage.Streams;
+using WinRT.Interop;
 
 namespace ShushVault.Windows.Views
 {
     public partial class MainPage : Page, INotifyPropertyChanged
     {
+        private static readonly HttpClient FaviconClient = new();
         private readonly VaultService vaultService = new();
         private readonly PlatformUnlockService platformUnlockService = new();
+        private readonly AppSettingsStore settingsStore = new();
+        private readonly AppSettings settings;
         private readonly List<SecretRecord> allRecords = [];
         private readonly List<string> workspaces = ["Default"];
         private SettingsWindow? settingsWindow;
@@ -21,8 +36,12 @@ namespace ShushVault.Windows.Views
         private string environmentFilter = "All";
         private string secretEnvironment = "Dev";
         private string importEnvironment = "Dev";
-        private int clipboardClearSeconds = 30;
+        private string devicePassphrase = string.Empty;
         private bool refreshingWorkspaces;
+        private bool initialized;
+        private string currentIconBase64 = string.Empty;
+        private bool iconIsManual;
+        private CancellationTokenSource? faviconCts;
 
         public ObservableCollection<SecretListItem> Secrets { get; } = [];
         public ObservableCollection<ImportPreviewListItem> ImportPreview { get; } = [];
@@ -33,8 +52,21 @@ namespace ShushVault.Windows.Views
         {
             this.InitializeComponent();
             App.MainWindow.SetTitleBar(TitleBar);
-            vaultService.Unlock(platformUnlockService.GetOrCreateDevicePassphrase());
+            settings = settingsStore.Load();
+            devicePassphrase = platformUnlockService.GetOrCreateDevicePassphrase();
+            vaultService.Unlock(devicePassphrase);
+            initialized = true;
+            Loaded += (_, _) => CursorHelper.ApplyToTree(this);
             _ = LoadSecretsAsync();
+        }
+
+        private void OnRowLoaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is UIElement element)
+            {
+                CursorHelper.ApplyHand(element);
+                CursorHelper.ApplyToTree(element);
+            }
         }
 
         private async Task LoadSecretsAsync()
@@ -48,7 +80,7 @@ namespace ShushVault.Windows.Views
             }
             catch (CryptographicException)
             {
-                StatusText.Text = "Could not open the encrypted vault. If this was created with an old passphrase, reset or migrate it from Settings.";
+                // Vault unreadable. Silent.
             }
         }
 
@@ -58,8 +90,8 @@ namespace ShushVault.Windows.Views
             {
                 settingsWindow = new SettingsWindow(
                     vaultService.FilePath,
-                    clipboardClearSeconds,
-                    seconds => clipboardClearSeconds = seconds);
+                    settings,
+                    settingsStore);
                 settingsWindow.Closed += (_, _) => settingsWindow = null;
             }
 
@@ -68,12 +100,19 @@ namespace ShushVault.Windows.Views
 
         private void OnNewSecretClicked(object sender, RoutedEventArgs e)
         {
-            editingId = null;
-            ClearSecretForm();
-            SecretDialogTitle.Text = "New Secret";
-            SaveButton.Content = "Save";
-            ShowDialog(SecretDialog);
-            NameBox.Focus(FocusState.Programmatic);
+            try
+            {
+                editingId = null;
+                ClearSecretForm();
+                SecretDialogTitle.Text = "New secret";
+                SaveButton.Content = "Save";
+                ShowDialog(SecretDialog);
+                DispatcherQueue.TryEnqueue(() => NameBox.Focus(FocusState.Programmatic));
+            }
+            catch (Exception ex)
+            {
+                App.LogCrash(ex);
+            }
         }
 
         private void OnImportEnvClicked(object sender, RoutedEventArgs e)
@@ -81,7 +120,8 @@ namespace ShushVault.Windows.Views
             ImportPreview.Clear();
             EnvImportBox.Text = string.Empty;
             SelectComboValue(ImportWorkspaceBox, "Default");
-            SetImportEnvironment("Dev");
+            SelectComboValue(ImportEnvironmentBox, "Dev");
+            importEnvironment = "Dev";
             ShowDialog(ImportDialog);
             EnvImportBox.Focus(FocusState.Programmatic);
         }
@@ -95,7 +135,7 @@ namespace ShushVault.Windows.Views
 
         private void OnWorkspaceSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (refreshingWorkspaces || SelectedWorkspace(WorkspaceBox) != "Add workspace...")
+            if (refreshingWorkspaces || SelectedWorkspace(WorkspaceBox) != "Add workspace")
             {
                 return;
             }
@@ -112,7 +152,6 @@ namespace ShushVault.Windows.Views
             var workspace = NewWorkspaceBox.Text.Trim();
             if (workspace.Length == 0)
             {
-                StatusText.Text = "Workspace name is required.";
                 return;
             }
 
@@ -130,16 +169,15 @@ namespace ShushVault.Windows.Views
         {
             try
             {
+                var website = WebsiteBox.Text?.Trim() ?? string.Empty;
                 IReadOnlyList<SecretRecord> records;
                 if (editingId is null)
                 {
-                    records = await vaultService.AddAsync(SelectedWorkspace(WorkspaceBox), NameBox.Text, ValueBox.Password, secretEnvironment, ProviderBox.Text, NotesBox.Text);
-                    StatusText.Text = $"Saved {NameBox.Text.Trim()}.";
+                    records = await vaultService.AddAsync(SelectedWorkspace(WorkspaceBox), NameBox.Text, ValueBox.Password, secretEnvironment, ProviderBox.Text, NotesBox.Text, website, currentIconBase64);
                 }
                 else
                 {
-                    records = await vaultService.UpdateAsync(editingId, SelectedWorkspace(WorkspaceBox), NameBox.Text, ValueBox.Password, secretEnvironment, ProviderBox.Text, NotesBox.Text);
-                    StatusText.Text = $"Updated {NameBox.Text.Trim()}.";
+                    records = await vaultService.UpdateAsync(editingId, SelectedWorkspace(WorkspaceBox), NameBox.Text, ValueBox.Password, secretEnvironment, ProviderBox.Text, NotesBox.Text, website, currentIconBase64);
                 }
 
                 allRecords.Clear();
@@ -149,80 +187,190 @@ namespace ShushVault.Windows.Views
                 RefreshWorkspaceChoices();
                 ApplyFilters();
             }
-            catch (ArgumentException ex)
+            catch (ArgumentException)
             {
-                StatusText.Text = ex.Message;
+                // Invalid input.
             }
             catch (CryptographicException)
             {
-                StatusText.Text = "Could not save to the encrypted vault.";
+                // Encryption error.
             }
         }
 
-        private void OnEditClicked(object sender, RoutedEventArgs e)
+        private void OnRowCopyClicked(object sender, RoutedEventArgs e)
+            => CopyRecord(FindRecord(sender), sender as FrameworkElement);
+
+        private void OnRowTapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
         {
-            if (SecretsList.SelectedItem is not SecretListItem item)
+            FrameworkElement? copyButton = null;
+            if (e.OriginalSource is DependencyObject source)
+            {
+                var current = source;
+                while (current is not null)
+                {
+                    if (current is Button)
+                    {
+                        return;
+                    }
+                    current = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(current);
+                }
+            }
+
+            if (sender is FrameworkElement row)
+            {
+                copyButton = FindCopyButton(row);
+            }
+
+            CopyRecord(FindRecord(sender), copyButton);
+        }
+
+        private static FrameworkElement? FindCopyButton(DependencyObject root)
+        {
+            var count = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root);
+            for (var i = 0; i < count; i++)
+            {
+                var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, i);
+                if (child is Button { Name: "" } button)
+                {
+                    if (ToolTipService.GetToolTip(button) is string tip && tip == "Copy value")
+                    {
+                        return button;
+                    }
+                }
+
+                if (FindCopyButton(child) is { } found)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
+        private void CopyRecord(SecretRecord? record, FrameworkElement? anchor)
+        {
+            if (record is null)
             {
                 return;
             }
 
-            var record = allRecords.First(record => record.Id == item.Id);
+            var package = new DataPackage();
+            package.SetText(record.Value);
+            Clipboard.SetContent(package);
+            if (anchor is not null)
+            {
+                ShowCopiedFlyout(anchor);
+            }
+            _ = ClearClipboardLaterAsync(record.Value, settings.ClipboardClearSeconds);
+        }
+
+        private void ShowCopiedFlyout(FrameworkElement anchor)
+        {
+            try
+            {
+                var label = new TextBlock
+                {
+                    Text = "Copied",
+                    FontSize = 12,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                };
+                var flyout = new Flyout
+                {
+                    Content = label,
+                    Placement = FlyoutPlacementMode.Top,
+                    ShowMode = FlyoutShowMode.Transient,
+                    OverlayInputPassThroughElement = anchor,
+                };
+                flyout.ShowAt(anchor, new FlyoutShowOptions { Placement = FlyoutPlacementMode.Top });
+
+                var timer = DispatcherQueue.CreateTimer();
+                timer.Interval = TimeSpan.FromMilliseconds(900);
+                timer.IsRepeating = false;
+                timer.Tick += (_, _) =>
+                {
+                    timer.Stop();
+                    flyout.Hide();
+                };
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Copied flyout failed: {ex.Message}");
+            }
+        }
+
+        private void OnRowPointerEntered(object sender, PointerRoutedEventArgs e)
+        {
+            if (sender is Grid grid && Application.Current.Resources.TryGetValue("RowHoverBrush", out var brush) && brush is Brush hover)
+            {
+                grid.Background = hover;
+            }
+        }
+
+        private void OnRowPointerExited(object sender, PointerRoutedEventArgs e)
+        {
+            if (sender is Grid grid)
+            {
+                grid.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            }
+        }
+
+        private void OnRowEditClicked(object sender, RoutedEventArgs e)
+        {
+            if (FindRecord(sender) is not { } record)
+            {
+                return;
+            }
+
             editingId = record.Id;
             SelectComboValue(WorkspaceBox, record.Workspace);
             NameBox.Text = record.Name;
             ValueBox.Password = record.Value;
             ProviderBox.Text = record.Provider;
             NotesBox.Text = record.Notes;
+            WebsiteBox.Text = record.Website;
+            ResetIconPreview();
+            if (!string.IsNullOrEmpty(record.IconBase64))
+            {
+                _ = LoadIconFromBase64Async(record.IconBase64, manual: true);
+            }
             SetSecretEnvironment(record.Environment);
-            SecretDialogTitle.Text = "Edit Secret";
+            SecretDialogTitle.Text = "Edit secret";
             SaveButton.Content = "Save";
             ShowDialog(SecretDialog);
         }
 
-        private async void OnDeleteClicked(object sender, RoutedEventArgs e)
+        private async void OnRowDeleteClicked(object sender, RoutedEventArgs e)
         {
-            if (SecretsList.SelectedItem is not SecretListItem item)
+            if (FindRecord(sender) is not { } record)
+            {
+                return;
+            }
+
+            var confirm = new ContentDialog
+            {
+                Title = "Delete secret?",
+                Content = $"Permanently remove {record.Name}? This cannot be undone.",
+                PrimaryButtonText = "Delete",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = this.XamlRoot
+            };
+
+            if (await confirm.ShowAsync() != ContentDialogResult.Primary)
             {
                 return;
             }
 
             allRecords.Clear();
-            allRecords.AddRange(await vaultService.DeleteAsync(item.Id));
+            allRecords.AddRange(await vaultService.DeleteAsync(record.Id));
             ApplyFilters();
-            StatusText.Text = "Deleted selected secret.";
-        }
-
-        private void OnCopyClicked(object sender, RoutedEventArgs e)
-        {
-            if (SecretsList.SelectedItem is not SecretListItem item)
-            {
-                return;
-            }
-
-            var record = allRecords.First(record => record.Id == item.Id);
-            var package = new DataPackage();
-            package.SetText(record.Value);
-            Clipboard.SetContent(package);
-            _ = ClearClipboardLaterAsync(record.Value, clipboardClearSeconds);
-            StatusText.Text = ClipboardStatus($"Copied {record.Name}.", clipboardClearSeconds);
-        }
-
-        private void OnExportClicked(object sender, RoutedEventArgs e)
-        {
-            var visibleIds = Secrets.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
-            var exported = vaultService.ExportEnv(allRecords.Where(record => visibleIds.Contains(record.Id)));
-            var package = new DataPackage();
-            package.SetText(exported);
-            Clipboard.SetContent(package);
-            _ = ClearClipboardLaterAsync(exported, clipboardClearSeconds);
-            StatusText.Text = ClipboardStatus("Copied visible secrets as .env.", clipboardClearSeconds);
         }
 
         private async void OnImportClicked(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(EnvImportBox.Text))
             {
-                StatusText.Text = "Paste KEY=value lines first.";
                 return;
             }
 
@@ -237,7 +385,6 @@ namespace ShushVault.Windows.Views
             ImportPreview.Clear();
             RefreshWorkspaceChoices();
             ApplyFilters();
-            StatusText.Text = "Imported .env entries.";
         }
 
         private void OnCloseDialogClicked(object sender, RoutedEventArgs e)
@@ -246,24 +393,41 @@ namespace ShushVault.Windows.Views
             ClearSecretForm();
         }
 
-        private void OnSecretSelectionChanged(object sender, SelectionChangedEventArgs e)
-            => SetSelectionActions(SecretsList.SelectedItem is SecretListItem);
-
         private void OnFilterChanged(object sender, object e)
             => ApplyFilters();
 
-        private void OnFilterEnvironmentClicked(object sender, RoutedEventArgs e)
+        private void OnEnvFilterChanged(object sender, SelectionChangedEventArgs e)
         {
-            environmentFilter = (sender as Button)?.Content?.ToString() ?? "All";
-            ApplyFilters();
+            if (!initialized)
+            {
+                return;
+            }
+
+            if (EnvFilterBox.SelectedItem is ComboBoxItem item && item.Tag is string env)
+            {
+                environmentFilter = env;
+                ApplyFilters();
+            }
         }
 
-        private void OnSecretEnvironmentClicked(object sender, RoutedEventArgs e)
-            => SetSecretEnvironment((sender as ToggleButton)?.Content?.ToString() ?? "Dev");
-
-        private void OnImportEnvironmentClicked(object sender, RoutedEventArgs e)
+        private void OnSecretEnvironmentChanged(object sender, SelectionChangedEventArgs e)
         {
-            SetImportEnvironment((sender as ToggleButton)?.Content?.ToString() ?? "Dev");
+            if (!initialized)
+            {
+                return;
+            }
+
+            secretEnvironment = (EnvironmentBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Dev";
+        }
+
+        private void OnImportEnvironmentChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!initialized)
+            {
+                return;
+            }
+
+            importEnvironment = (ImportEnvironmentBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Dev";
             RefreshImportPreview();
         }
 
@@ -277,6 +441,172 @@ namespace ShushVault.Windows.Views
             {
                 ImportPreview.Add(ImportPreviewListItem.From(item));
             }
+        }
+
+        private void OnIconDragOver(object sender, DragEventArgs e)
+        {
+            e.AcceptedOperation = DataPackageOperation.Copy;
+        }
+
+        private async void OnIconDrop(object sender, DragEventArgs e)
+        {
+            if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+            {
+                return;
+            }
+
+            var items = await e.DataView.GetStorageItemsAsync();
+            if (items.FirstOrDefault() is StorageFile file)
+            {
+                await SetIconFromFileAsync(file);
+            }
+        }
+
+        private async void OnIconBrowseClicked(object sender, RoutedEventArgs e)
+        {
+            var picker = new global::Windows.Storage.Pickers.FileOpenPicker();
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.MainWindow));
+            picker.FileTypeFilter.Add(".png");
+            picker.FileTypeFilter.Add(".jpg");
+            picker.FileTypeFilter.Add(".jpeg");
+            picker.FileTypeFilter.Add(".svg");
+            picker.FileTypeFilter.Add(".ico");
+            var file = await picker.PickSingleFileAsync();
+            if (file is not null)
+            {
+                await SetIconFromFileAsync(file);
+            }
+        }
+
+        private async Task SetIconFromFileAsync(StorageFile file)
+        {
+            try
+            {
+                var buffer = await FileIO.ReadBufferAsync(file);
+                using var reader = DataReader.FromBuffer(buffer);
+                var bytes = new byte[buffer.Length];
+                reader.ReadBytes(bytes);
+                await ApplyIconBytesAsync(bytes, manual: true);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Icon load failed: {ex.Message}");
+            }
+        }
+
+        private async Task ApplyIconBytesAsync(byte[] bytes, bool manual)
+        {
+            try
+            {
+                var raStream = new InMemoryRandomAccessStream();
+                using (var writer = new DataWriter(raStream))
+                {
+                    writer.WriteBytes(bytes);
+                    await writer.StoreAsync();
+                    await writer.FlushAsync();
+                    writer.DetachStream();
+                }
+                raStream.Seek(0);
+                var bitmap = new BitmapImage();
+                await bitmap.SetSourceAsync(raStream);
+                IconPreview.Source = bitmap;
+                IconPreview.Visibility = Visibility.Visible;
+                IconHint.Visibility = Visibility.Collapsed;
+                currentIconBase64 = Convert.ToBase64String(bytes);
+                if (manual)
+                {
+                    iconIsManual = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Icon decode failed: {ex.Message}");
+            }
+        }
+
+        private async Task LoadIconFromBase64Async(string base64, bool manual)
+        {
+            try
+            {
+                var bytes = Convert.FromBase64String(base64);
+                await ApplyIconBytesAsync(bytes, manual);
+            }
+            catch (FormatException)
+            {
+                // Stored value isn't valid base64.
+            }
+        }
+
+        private void ResetIconPreview()
+        {
+            IconPreview.Source = null;
+            IconPreview.Visibility = Visibility.Collapsed;
+            IconHint.Visibility = Visibility.Visible;
+            currentIconBase64 = string.Empty;
+            iconIsManual = false;
+            faviconCts?.Cancel();
+            faviconCts = null;
+        }
+
+        private void OnWebsiteChanged(object sender, TextChangedEventArgs e)
+        {
+            if (iconIsManual)
+            {
+                return;
+            }
+
+            var input = WebsiteBox.Text?.Trim() ?? string.Empty;
+            faviconCts?.Cancel();
+            if (input.Length == 0 || ExtractDomain(input) is not { } domain)
+            {
+                if (!iconIsManual)
+                {
+                    IconPreview.Source = null;
+                    IconPreview.Visibility = Visibility.Collapsed;
+                    IconHint.Visibility = Visibility.Visible;
+                    currentIconBase64 = string.Empty;
+                }
+                return;
+            }
+
+            var cts = new CancellationTokenSource();
+            faviconCts = cts;
+            _ = FetchFaviconAsync(domain, cts.Token);
+        }
+
+        private async Task FetchFaviconAsync(string domain, CancellationToken token)
+        {
+            try
+            {
+                await Task.Delay(350, token);
+                var url = $"https://www.google.com/s2/favicons?domain={Uri.EscapeDataString(domain)}&sz=64";
+                var bytes = await FaviconClient.GetByteArrayAsync(url, token);
+                if (token.IsCancellationRequested || iconIsManual || bytes.Length == 0)
+                {
+                    return;
+                }
+
+                await ApplyIconBytesAsync(bytes, manual: false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Favicon fetch failed: {ex.Message}");
+            }
+        }
+
+        private static string? ExtractDomain(string input)
+        {
+            var candidate = input.Contains("://", StringComparison.Ordinal) ? input : $"https://{input}";
+            if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
+            {
+                return null;
+            }
+
+            var host = uri.Host;
+            return string.IsNullOrWhiteSpace(host) ? null : host;
         }
 
         private void ApplyFilters()
@@ -297,13 +627,13 @@ namespace ShushVault.Windows.Views
                 Secrets.Add(SecretListItem.From(record));
             }
 
-            SetSelectionActions(false);
-            ExportButton.IsEnabled = Secrets.Count > 0;
-            EmptyState.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            EmptyState.Visibility = Secrets.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            EmptyTitle.Text = allRecords.Count == 0
+                ? "No secrets"
+                : search.Length > 0
+                    ? "No matches"
+                    : "Nothing here";
             OnPropertyChanged(nameof(SecretsListVisibility));
-            StatusText.Text = filtered.Count == 0
-                ? string.Empty
-                : $"{filtered.Count} secret{(filtered.Count == 1 ? string.Empty : "s")} shown.";
         }
 
         private void ShowDialog(FrameworkElement dialog)
@@ -331,32 +661,25 @@ namespace ShushVault.Windows.Views
             ValueBox.Password = string.Empty;
             ProviderBox.Text = string.Empty;
             NotesBox.Text = string.Empty;
+            WebsiteBox.Text = string.Empty;
+            ResetIconPreview();
             SetSecretEnvironment("Dev");
         }
 
         private void SetSecretEnvironment(string environment)
         {
             secretEnvironment = environment;
-            DevToggle.IsChecked = environment == "Dev";
-            StagingToggle.IsChecked = environment == "Staging";
-            ProdToggle.IsChecked = environment == "Prod";
+            SelectComboValue(EnvironmentBox, environment);
         }
 
-        private void SetImportEnvironment(string environment)
+        private SecretRecord? FindRecord(object sender)
         {
-            importEnvironment = environment;
-            ImportDevToggle.IsChecked = environment == "Dev";
-            ImportStagingToggle.IsChecked = environment == "Staging";
-            ImportProdToggle.IsChecked = environment == "Prod";
-        }
+            if (sender is FrameworkElement { Tag: string id })
+            {
+                return allRecords.FirstOrDefault(record => record.Id == id);
+            }
 
-        private void SetSelectionActions(bool hasSelection)
-        {
-            EditButton.IsEnabled = hasSelection;
-            CopyButton.IsEnabled = hasSelection;
-            DeleteButton.IsEnabled = hasSelection;
-            ExportButton.IsEnabled = Secrets.Count > 0;
-            ActionBar.Visibility = hasSelection || Secrets.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            return null;
         }
 
         private void RefreshWorkspaceChoices()
@@ -378,7 +701,7 @@ namespace ShushVault.Windows.Views
             refreshingWorkspaces = true;
             try
             {
-                ReplaceComboItems(WorkspaceBox, [.. workspaces, "Add workspace..."], selected);
+                ReplaceComboItems(WorkspaceBox, [.. workspaces, "Add workspace"], selected);
                 ReplaceComboItems(ImportWorkspaceBox, workspaces, selected);
             }
             finally
@@ -449,11 +772,6 @@ namespace ShushVault.Windows.Views
             }
         }
 
-        private static string ClipboardStatus(string prefix, int clearSeconds)
-            => clearSeconds > 0
-                ? $"{prefix} Clipboard clears in {clearSeconds}s."
-                : $"{prefix} Clipboard auto-clear is off.";
-
         private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
@@ -466,30 +784,68 @@ namespace ShushVault.Windows.Views
         public string Environment { get; set; } = string.Empty;
         public string Provider { get; set; } = string.Empty;
         public string MaskedValue { get; set; } = string.Empty;
+        public string IconBase64 { get; set; } = string.Empty;
+        public string Initial { get; set; } = string.Empty;
+        public Microsoft.UI.Xaml.Media.Imaging.BitmapImage? IconSource { get; set; }
+        public Visibility IconVisibility { get; set; } = Visibility.Collapsed;
+        public Visibility InitialVisibility { get; set; } = Visibility.Visible;
 
         public static SecretListItem From(SecretRecord record)
-            => new()
+        {
+            var item = new SecretListItem
             {
                 Id = record.Id,
                 Workspace = record.Workspace,
                 Name = record.Name,
                 Environment = record.Environment,
-                Provider = string.IsNullOrWhiteSpace(record.Provider) ? "-" : record.Provider,
-                MaskedValue = Mask(record.Value)
+                Provider = record.Provider?.Trim() ?? string.Empty,
+                MaskedValue = Mask(record.Value),
+                IconBase64 = record.IconBase64,
+                Initial = string.IsNullOrEmpty(record.Name) ? "?" : record.Name[..1].ToUpperInvariant()
             };
 
+            if (!string.IsNullOrEmpty(record.IconBase64))
+            {
+                try
+                {
+                    var bytes = Convert.FromBase64String(record.IconBase64);
+                    var ms = new MemoryStream(bytes);
+                    var stream = ms.AsRandomAccessStream();
+                    var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+                    var op = bmp.SetSourceAsync(stream);
+                    op.Completed = (_, _) =>
+                    {
+                        stream.Dispose();
+                        ms.Dispose();
+                    };
+                    item.IconSource = bmp;
+                    item.IconVisibility = Visibility.Visible;
+                    item.InitialVisibility = Visibility.Collapsed;
+                }
+                catch
+                {
+                }
+            }
+
+            return item;
+        }
+
         private static string Mask(string value)
-            => value.Length <= 4
-                ? new string('•', Math.Max(value.Length, 1))
-                : $"{new string('•', Math.Min(value.Length, 12))}{value[^4..]}";
+            => string.IsNullOrEmpty(value) ? "•" : new string('•', 10);
     }
 
     public sealed class ImportPreviewListItem
     {
+        private static readonly SolidColorBrush ReadyBrush = new(Microsoft.UI.Colors.LightGray);
+        private static readonly SolidColorBrush ConflictBrush = new(Microsoft.UI.Colors.Goldenrod);
+        private static readonly SolidColorBrush IgnoredBrush = new(Microsoft.UI.Colors.DimGray);
+        private static readonly SolidColorBrush InvalidBrush = new(Microsoft.UI.Colors.IndianRed);
+
         public string Line { get; set; } = string.Empty;
         public string Key { get; set; } = string.Empty;
         public string MaskedValue { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
+        public Brush StatusForeground { get; set; } = IgnoredBrush;
 
         public static ImportPreviewListItem From(ImportPreviewItem item)
             => new()
@@ -497,7 +853,14 @@ namespace ShushVault.Windows.Views
                 Line = item.Line.ToString(),
                 Key = string.IsNullOrWhiteSpace(item.Key) ? "-" : item.Key,
                 MaskedValue = string.IsNullOrWhiteSpace(item.Value) ? "-" : SecretListItem.From(SecretRecord.Create("Default", item.Key, item.Value, "Dev", "", "")).MaskedValue,
-                Status = item.Status.ToString()
+                Status = item.Status.ToString(),
+                StatusForeground = item.Status switch
+                {
+                    ImportPreviewStatus.Ready => ReadyBrush,
+                    ImportPreviewStatus.Conflict => ConflictBrush,
+                    ImportPreviewStatus.Invalid => InvalidBrush,
+                    _ => IgnoredBrush
+                }
             };
     }
 }

@@ -1,13 +1,11 @@
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using Windows.Security.Credentials.UI;
 
 namespace ShushVault.Windows;
 
 internal sealed class PlatformUnlockService
 {
-    private const string HelloCredentialTarget = "ShushVault.VaultPassphrase";
     private const string DeviceCredentialTarget = "ShushVault.DeviceVaultKey";
     private const int CredTypeGeneric = 1;
     private const int CredPersistLocalMachine = 2;
@@ -24,52 +22,6 @@ internal sealed class PlatformUnlockService
         WritePassphrase(DeviceCredentialTarget, generated);
         return generated;
     }
-
-    public void SaveDevicePassphrase(string passphrase)
-        => WritePassphrase(DeviceCredentialTarget, passphrase);
-
-    public async Task<PlatformUnlockState> GetStateAsync()
-    {
-        var availability = await UserConsentVerifier.CheckAvailabilityAsync();
-        var available = availability is UserConsentVerifierAvailability.Available;
-        return new PlatformUnlockState(
-            available,
-            HasSavedPassphrase(HelloCredentialTarget),
-            availability switch
-            {
-                UserConsentVerifierAvailability.Available => "Windows Hello or PIN is available.",
-                UserConsentVerifierAvailability.DeviceNotPresent => "Windows Hello hardware is not available on this device.",
-                UserConsentVerifierAvailability.NotConfiguredForUser => "Set up Windows Hello or a PIN in Windows Settings first.",
-                UserConsentVerifierAvailability.DisabledByPolicy => "Windows Hello is disabled by policy.",
-                _ => "Windows Hello is not available."
-            });
-    }
-
-    public async Task<string?> ReadPassphraseWithConsentAsync()
-    {
-        var result = await UserConsentVerifier.RequestVerificationAsync("Unlock Shush Vault");
-        return result is UserConsentVerificationResult.Verified
-            ? ReadPassphrase(HelloCredentialTarget)
-            : null;
-    }
-
-    public async Task<bool> SavePassphraseWithConsentAsync(string passphrase)
-    {
-        var result = await UserConsentVerifier.RequestVerificationAsync("Save Shush Vault passphrase for Windows Hello");
-        if (result is not UserConsentVerificationResult.Verified)
-        {
-            return false;
-        }
-
-        WritePassphrase(HelloCredentialTarget, passphrase);
-        return true;
-    }
-
-    public void DeleteSavedPassphrase()
-        => CredDelete(HelloCredentialTarget, CredTypeGeneric, 0);
-
-    private static bool HasSavedPassphrase(string target)
-        => ReadPassphrase(target) is not null;
 
     private static string? ReadPassphrase(string target)
     {
@@ -125,9 +77,6 @@ internal sealed class PlatformUnlockService
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool CredWrite(ref Credential credential, int flags);
 
-    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern bool CredDelete(string target, int type, int flags);
-
     [DllImport("advapi32.dll")]
     private static extern void CredFree(IntPtr buffer);
 
@@ -148,5 +97,3 @@ internal sealed class PlatformUnlockService
         public string UserName;
     }
 }
-
-internal sealed record PlatformUnlockState(bool IsAvailable, bool HasSavedPassphrase, string Message);
