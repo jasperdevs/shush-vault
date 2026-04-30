@@ -154,21 +154,51 @@ struct ContentView: View {
             }
 
             DisclosureGroup("Settings") {
-                HStack(spacing: 10) {
-                    SecureField("Vault passphrase", text: $passphrase)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 260)
-                    Button("Unlock") {
-                        store.unlock(passphrase: passphrase)
-                        passphrase = ""
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        SecureField("Vault passphrase", text: $passphrase)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 260)
+                        Button("Unlock") {
+                            store.unlock(passphrase: passphrase)
+                            passphrase = ""
+                        }
+                        Button("Lock") {
+                            store.lock()
+                            passphrase = ""
+                            selectedId = nil
+                            clearEditor()
+                        }
+                        Spacer()
                     }
-                    Button("Lock") {
-                        store.lock()
-                        passphrase = ""
-                        selectedId = nil
-                        clearEditor()
+
+                    HStack(spacing: 10) {
+                        Button("Use \(store.platformUnlockLabel)") {
+                            Task {
+                                await store.unlockWithPlatform()
+                            }
+                        }
+                        .disabled(!store.platformUnlockAvailable || !store.platformUnlockSaved)
+
+                        Button("Save for \(store.platformUnlockLabel)") {
+                            let currentPassphrase = passphrase
+                            passphrase = ""
+                            Task {
+                                await store.savePlatformUnlock(passphrase: currentPassphrase)
+                            }
+                        }
+                        .disabled(!store.platformUnlockAvailable)
+
+                        Button("Remove saved unlock") {
+                            store.removePlatformUnlock()
+                        }
+                        .disabled(!store.platformUnlockSaved)
+
+                        Text(store.platformUnlockMessage)
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
                     }
-                    Spacer()
                 }
                 .padding(.top, 8)
             }

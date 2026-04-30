@@ -17,6 +17,7 @@ let package = Package(
             sources: [
                 "ShushVaultApp.swift",
                 "ContentView.swift",
+                "PlatformUnlockStore.swift",
                 "VaultStore.swift"
             ]
         ),

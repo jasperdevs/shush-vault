@@ -62,10 +62,25 @@ fn build_ui(app: &Application) {
         .build();
     let unlock = Button::with_label("Unlock");
     let lock = Button::with_label("Lock");
+    let platform_unlock = Button::with_label("Use platform unlock");
+    let save_platform_unlock = Button::with_label("Save platform unlock");
+    let remove_platform_unlock = Button::with_label("Remove saved unlock");
+    platform_unlock.set_sensitive(false);
+    save_platform_unlock.set_sensitive(false);
+    remove_platform_unlock.set_sensitive(false);
+    let platform_unlock_status = Label::new(Some(
+        "Platform unlock is not available in this Linux build. Use the passphrase.",
+    ));
+    platform_unlock_status.set_xalign(0.0);
+    platform_unlock_status.set_wrap(true);
     let settings = Box::new(Orientation::Horizontal, 8);
     settings.append(&passphrase);
     settings.append(&unlock);
     settings.append(&lock);
+    settings.append(&platform_unlock);
+    settings.append(&save_platform_unlock);
+    settings.append(&remove_platform_unlock);
+    settings.append(&platform_unlock_status);
     let settings_expander = Expander::builder()
         .label("Settings")
         .child(&settings)

@@ -52,12 +52,17 @@ final class VaultStore: ObservableObject {
     @Published private(set) var rows: [SecretRow] = []
     @Published private(set) var isUnlocked = false
     @Published var status = "Locked"
+    @Published private(set) var platformUnlockAvailable = false
+    @Published private(set) var platformUnlockSaved = false
+    @Published private(set) var platformUnlockLabel = "Device authentication"
+    @Published private(set) var platformUnlockMessage = "Checking platform unlock..."
 
     private var passphrase = ""
     private let fileURL: URL
 
     init(fileURL: URL = VaultStore.defaultVaultURL()) {
         self.fileURL = fileURL
+        refreshPlatformUnlock()
     }
 
     func unlock(passphrase: String) {
@@ -83,6 +88,54 @@ final class VaultStore: ObservableObject {
         rows = []
         isUnlocked = false
         status = "Locked."
+    }
+
+    func refreshPlatformUnlock() {
+        let state = PlatformUnlockStore.state()
+        platformUnlockAvailable = state.available
+        platformUnlockSaved = state.saved
+        platformUnlockLabel = state.label
+        platformUnlockMessage = state.saved
+            ? "\(state.message) Saved unlock is configured."
+            : state.message
+    }
+
+    func savePlatformUnlock(passphrase: String) async {
+        guard !passphrase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            status = "Enter a passphrase first."
+            return
+        }
+
+        unlock(passphrase: passphrase)
+        guard isUnlocked else {
+            return
+        }
+
+        let saved = await PlatformUnlockStore.savePassphrase(
+            passphrase,
+            reason: "Save Shush Vault passphrase for \(platformUnlockLabel)"
+        )
+        refreshPlatformUnlock()
+        status = saved
+            ? "Saved passphrase to Keychain for \(platformUnlockLabel) unlock."
+            : "\(platformUnlockLabel) setup was canceled."
+    }
+
+    func unlockWithPlatform() async {
+        guard let savedPassphrase = await PlatformUnlockStore.readPassphraseWithDeviceAuth(
+            reason: "Unlock Shush Vault"
+        ) else {
+            status = "\(platformUnlockLabel) unlock was canceled or no passphrase is saved."
+            return
+        }
+
+        unlock(passphrase: savedPassphrase)
+    }
+
+    func removePlatformUnlock() {
+        PlatformUnlockStore.deletePassphrase()
+        refreshPlatformUnlock()
+        status = "Removed saved \(platformUnlockLabel) unlock."
     }
 
     func add(workspace: String, name: String, value: String, environment: String, provider: String, notes: String) {

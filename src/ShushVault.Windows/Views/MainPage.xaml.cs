@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using Microsoft.UI.Xaml.Controls;
 using ShushVault.Core;
+using ShushVault.Windows;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
@@ -11,6 +12,7 @@ namespace ShushVault.Windows.Views
     public partial class MainPage : Page
     {
         private readonly VaultService vaultService = new();
+        private readonly PlatformUnlockService platformUnlockService = new();
         private readonly List<SecretRecord> allRecords = [];
         private string? editingId;
 
@@ -24,36 +26,79 @@ namespace ShushVault.Windows.Views
             App.MainWindow.SetTitleBar(TitleBarDragRegion);
             VaultPathText.Text = vaultService.FilePath;
             _ = LoadSecretsAsync();
+            _ = RefreshPlatformUnlockStateAsync();
         }
 
-        private async Task LoadSecretsAsync()
+        private async Task<bool> LoadSecretsAsync()
         {
             try
             {
                 allRecords.Clear();
                 allRecords.AddRange(await vaultService.LoadAsync());
                 ApplyFilters();
+                return true;
             }
             catch (InvalidOperationException ex)
             {
                 StatusText.Text = ex.Message;
+                return false;
             }
             catch (CryptographicException)
             {
+                vaultService.Lock();
+                allRecords.Clear();
+                Secrets.Clear();
+                VaultStateText.Text = "Locked";
                 StatusText.Text = "Could not unlock the vault. Check the passphrase.";
+                return false;
             }
         }
 
         private async void OnUnlockClicked(object sender, RoutedEventArgs e)
         {
-            if (!TryUnlockFromInput())
+            var passphrase = PassphraseBox.Password;
+            if (!await UnlockWithPassphraseAsync(passphrase))
             {
                 return;
             }
 
-            await LoadSecretsAsync();
-            StatusText.Text = $"Unlocked {Path.GetFileName(vaultService.FilePath)}.";
-            VaultStateText.Text = "Unlocked";
+            PassphraseBox.Password = string.Empty;
+        }
+
+        private async void OnPlatformUnlockClicked(object sender, RoutedEventArgs e)
+        {
+            var passphrase = await platformUnlockService.ReadPassphraseWithConsentAsync();
+            if (passphrase is null)
+            {
+                StatusText.Text = "Windows Hello unlock was canceled or no passphrase is saved.";
+                return;
+            }
+
+            await UnlockWithPassphraseAsync(passphrase);
+        }
+
+        private async void OnSavePlatformUnlockClicked(object sender, RoutedEventArgs e)
+        {
+            var passphrase = PassphraseBox.Password;
+            if (!await UnlockWithPassphraseAsync(passphrase))
+            {
+                return;
+            }
+
+            PassphraseBox.Password = string.Empty;
+            if (await platformUnlockService.SavePassphraseWithConsentAsync(passphrase))
+            {
+                StatusText.Text = "Saved passphrase to Windows Credential Manager for Windows Hello unlock.";
+            }
+
+            await RefreshPlatformUnlockStateAsync();
+        }
+
+        private async void OnRemovePlatformUnlockClicked(object sender, RoutedEventArgs e)
+        {
+            platformUnlockService.DeleteSavedPassphrase();
+            await RefreshPlatformUnlockStateAsync();
+            StatusText.Text = "Removed saved Windows Hello unlock.";
         }
 
         private void OnLockClicked(object sender, RoutedEventArgs e)
@@ -316,6 +361,39 @@ namespace ShushVault.Windows.Views
                 StatusText.Text = ex.Message;
                 return false;
             }
+        }
+
+        private async Task<bool> UnlockWithPassphraseAsync(string passphrase)
+        {
+            try
+            {
+                vaultService.Unlock(passphrase);
+            }
+            catch (ArgumentException ex)
+            {
+                StatusText.Text = ex.Message;
+                return false;
+            }
+
+            if (!await LoadSecretsAsync())
+            {
+                return false;
+            }
+
+            StatusText.Text = $"Unlocked {Path.GetFileName(vaultService.FilePath)}.";
+            VaultStateText.Text = "Unlocked";
+            return true;
+        }
+
+        private async Task RefreshPlatformUnlockStateAsync()
+        {
+            var state = await platformUnlockService.GetStateAsync();
+            PlatformUnlockStatus.Text = state.HasSavedPassphrase
+                ? $"{state.Message} Saved unlock is configured."
+                : state.Message;
+            PlatformUnlockButton.IsEnabled = state.IsAvailable && state.HasSavedPassphrase;
+            SavePlatformUnlockButton.IsEnabled = state.IsAvailable;
+            RemovePlatformUnlockButton.IsEnabled = state.HasSavedPassphrase;
         }
 
         private static async Task ClearClipboardLaterAsync(string expectedText)
