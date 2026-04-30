@@ -1,18 +1,18 @@
 <div align="center">
-  <img src="assets/api-vault-logo.png" alt="api vault logo" width="128" />
+  <img src="assets/shh-key-vault-logo.png" alt="shh key vault logo" width="128" />
 
-  <h1>api vault</h1>
+  <h1>🤫 shh key vault</h1>
 
-  <p><strong>open-source, encrypted API key management for desktop and CLI.</strong></p>
+  <p><strong>open-source, encrypted secret and API key management for desktop and CLI.</strong></p>
 
   <p>
-    <img alt="GitHub release downloads" src="https://img.shields.io/github/downloads/jasperdevs/api-vault/total?label=downloads">
-    <img alt="GitHub latest release downloads" src="https://img.shields.io/github/downloads/jasperdevs/api-vault/latest/total?label=downloads%40latest">
-    <img alt="GitHub stars" src="https://img.shields.io/github/stars/jasperdevs/api-vault?style=flat">
+    <img alt="GitHub release downloads" src="https://img.shields.io/github/downloads/jasperdevs/shh-key-vault/total?label=downloads">
+    <img alt="GitHub latest release downloads" src="https://img.shields.io/github/downloads/jasperdevs/shh-key-vault/latest/total?label=downloads%40latest">
+    <img alt="GitHub stars" src="https://img.shields.io/github/stars/jasperdevs/shh-key-vault?style=flat">
   </p>
 
   <p>
-    API Vault is a local-first vault for storing, organizing, importing, and copying API keys across macOS, Windows, and Linux.
+    Shh Key Vault is a local-first vault for storing, organizing, importing, and copying secrets and API keys across macOS, Windows, and Linux.
     The desktop app and CLI should share the same encrypted Rust core so secrets behave the same everywhere.
   </p>
 
@@ -99,12 +99,12 @@
 
   <h2>starter CLI shape</h2>
 
-  <pre><code>apivault init
-apivault add OPENAI_API_KEY
-apivault list --workspace my-app
-apivault copy OPENAI_API_KEY
-apivault import .env --workspace my-app --env dev
-apivault export --format env</code></pre>
+  <pre><code>shhkeyvault init
+shhkeyvault add OPENAI_API_KEY
+shhkeyvault list --workspace my-app
+shhkeyvault copy OPENAI_API_KEY
+shhkeyvault import .env --workspace my-app --env dev
+shhkeyvault export --format env</code></pre>
 
   <p>MIT</p>
 </div>
