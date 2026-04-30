@@ -1,0 +1,191 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (without v prefix), e.g. 0.1.0'
+        required: true
+        default: '0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.set.outputs.version }}
+    steps:
+      - id: set
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            ref="${GITHUB_REF#refs/tags/}"
+            echo "version=${ref#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+  windows:
+    needs: resolve-version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Build icon
+        shell: pwsh
+        run: ./scripts/build-icon.ps1
+      - name: Package
+        shell: pwsh
+        run: ./scripts/package-windows.ps1 -Version ${{ needs.resolve-version.outputs.version }}
+      - name: Stage installer artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/upload | Out-Null
+          Copy-Item artifacts/velopack/Setup.exe artifacts/upload/ShushVault-${{ needs.resolve-version.outputs.version }}-Setup.exe -ErrorAction SilentlyContinue
+          Copy-Item artifacts/velopack/*.nupkg artifacts/upload/ -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: artifacts/upload/*
+
+  linux:
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install GTK4
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev
+      - name: Build
+        run: cargo build --release --manifest-path src/ShushVault.Linux/Cargo.toml
+      - name: Stage tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.resolve-version.outputs.version }}"
+          stage="staging/shush-vault-${version}-linux-x64"
+          mkdir -p "$stage"
+          cp src/ShushVault.Linux/target/release/shush-vault-linux "$stage/shush-vault"
+          cp assets/shush-vault-logo.png "$stage/shush-vault.png" || true
+          cat > "$stage/shush-vault.desktop" <<EOF
+          [Desktop Entry]
+          Type=Application
+          Name=Shush Vault
+          Exec=shush-vault
+          Icon=shush-vault
+          Categories=Utility;
+          Terminal=false
+          EOF
+          cat > "$stage/README.txt" <<EOF
+          Shush Vault for Linux (GTK 4)
+
+          Requires libgtk-4-1 installed:
+            Debian/Ubuntu:  sudo apt install libgtk-4-1
+            Fedora:         sudo dnf install gtk4
+            Arch:           sudo pacman -S gtk4
+
+          To run:
+            ./shush-vault
+          EOF
+          mkdir -p artifacts
+          tar -C staging -czf "artifacts/shush-vault-${version}-linux-x64.tar.gz" "shush-vault-${version}-linux-x64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: artifacts/*
+
+  macos:
+    needs: resolve-version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build -c release --package-path src/ShushVault.Mac
+      - name: Wrap in .app bundle and ad-hoc sign
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.resolve-version.outputs.version }}"
+          app="staging/Shush Vault.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp src/ShushVault.Mac/.build/release/ShushVaultMac "$app/Contents/MacOS/ShushVault"
+          chmod +x "$app/Contents/MacOS/ShushVault"
+          cat > "$app/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key><string>en</string>
+            <key>CFBundleExecutable</key><string>ShushVault</string>
+            <key>CFBundleIdentifier</key><string>com.jasperdevs.shushvault</string>
+            <key>CFBundleName</key><string>Shush Vault</string>
+            <key>CFBundleDisplayName</key><string>Shush Vault</string>
+            <key>CFBundleVersion</key><string>${version}</string>
+            <key>CFBundleShortVersionString</key><string>${version}</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>14.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
+          </dict>
+          </plist>
+          EOF
+          codesign --force --deep --sign - "$app"
+          mkdir -p artifacts
+          (cd staging && zip -r "../artifacts/ShushVault-${version}-macos.zip" "Shush Vault.app")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: artifacts/*
+
+  release:
+    needs: [resolve-version, windows, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: List artifacts
+        run: ls -la dist
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.resolve-version.outputs.version }}"
+          tag="v${version}"
+          notes_file=$(mktemp)
+          cat > "$notes_file" <<'EOF'
+          Cross-platform builds for testing.
+
+          ### Windows
+          Run **ShushVault-VERSION-Setup.exe**. Updates ship via Velopack.
+
+          ### macOS
+          Unzip and move **Shush Vault.app** to `/Applications`. The build is ad-hoc signed (no Apple Developer ID), so on first launch macOS will block it. To open:
+          - Right-click the app → **Open** → confirm, or
+          - Run `xattr -cr "/Applications/Shush Vault.app"` then double-click.
+
+          Requires macOS 14 or newer.
+
+          ### Linux
+          Extract the tarball and run `./shush-vault`. Requires GTK 4:
+          ```
+          sudo apt install libgtk-4-1   # Debian/Ubuntu
+          sudo dnf install gtk4         # Fedora
+          ```
+          EOF
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" --title "Shush Vault $tag" --notes-file "$notes_file" dist/*
+          fi
