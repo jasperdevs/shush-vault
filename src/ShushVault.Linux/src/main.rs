@@ -204,6 +204,7 @@ fn build_ui(app: &Application) {
                 Ok(loaded) => {
                     *vault.borrow_mut() = loaded;
                     *passphrase_state.borrow_mut() = passphrase_text;
+                    passphrase.set_text("");
                     *selected_id.borrow_mut() = None;
                     *editing_id.borrow_mut() = None;
                     let count = render_list(

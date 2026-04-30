@@ -1,14 +1,14 @@
 # Shush Vault architecture
 
-Shush Vault is native-first and Windows-first during development, with one product model.
+Shush Vault is native-first, with one product model and separate OS-native shells.
 
 ## Platform shells
 
 | Platform | UI | Status |
 | --- | --- | --- |
-| Windows | WinUI 3 | runnable on this machine |
-| macOS | SwiftUI | shared-vault source present; macOS CI build configured |
-| Linux | GTK 4 / libadwaita | shared-vault source present; Linux GTK CI check configured |
+| Windows | WinUI 3 | runnable on this machine; CI packages with Velopack |
+| macOS | SwiftUI | shared-vault format client; macOS CI tests |
+| Linux | GTK 4 | shared Rust vault crate client; Linux GTK CI check |
 
 Electron is intentionally not used.
 
@@ -26,7 +26,7 @@ Every platform works around the same record shape:
 - `createdAt`
 - `updatedAt`
 
-The record model is shaped for future sync because each record has a stable ID and timestamps. The Rust CLI and Windows app now use the same portable encrypted vault envelope: PBKDF2-SHA256 key derivation, AES-256-GCM encryption, base64 salt/nonce/ciphertext, and JSON metadata.
+The record model is shaped for future sync because each record has a stable ID and timestamps. The Rust CLI, Windows app, macOS app, and Linux app use the same portable encrypted vault envelope: PBKDF2-SHA256 key derivation, AES-256-GCM encryption, base64 salt/nonce/ciphertext, and JSON metadata. The committed vault fixture is tested from Rust, .NET, and Swift so format drift is caught in CI.
 
 ## Sync plan
 

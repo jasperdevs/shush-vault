@@ -12,8 +12,8 @@
   </p>
 
   <p>
-    Shush Vault is a local-first vault for storing, organizing, importing, and copying secrets and API keys from a Windows desktop app and cross-platform CLI.
-    The repo is native-first and Windows-first right now: WinUI 3 is the verified desktop app, with SwiftUI and GTK sources kept separate until those clients are wired to the shared encrypted vault and verified on their OSes.
+    Shush Vault is a local-first vault for storing, organizing, importing, and copying secrets and API keys from native desktop apps and a cross-platform CLI.
+    The repo is native-first: WinUI 3 for Windows, SwiftUI for macOS, GTK 4 for Linux, and Rust for the CLI/shared vault crate.
   </p>
 
   <h2>features</h2>
@@ -114,11 +114,11 @@
     </tr>
     <tr>
       <td>macOS</td>
-      <td>SwiftUI native source uses the shared encrypted vault format. CI is configured to build it on macOS.</td>
+      <td>SwiftUI native client with encrypted vault unlock, CRUD, search, copy, .env import/export, and macOS CI tests.</td>
     </tr>
     <tr>
       <td>Linux</td>
-      <td>GTK 4 native source uses the shared encrypted vault crate. CI is configured to check it on Linux with GTK 4 dev libraries.</td>
+      <td>GTK 4 native client with encrypted vault unlock, CRUD, search/filter, copy, .env import/export, and Linux CI checks.</td>
     </tr>
     <tr>
       <td>Sync</td>
