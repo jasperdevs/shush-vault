@@ -28,12 +28,11 @@
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="1" Padding="28,18,28,24" RowSpacing="14">
+        <Grid Grid.Row="1" Padding="24,16,24,20" RowSpacing="12">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
@@ -42,36 +41,46 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock
-                    VerticalAlignment="Center"
-                    FontSize="24"
-                    FontWeight="SemiBold"
-                    Text="secrets" />
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Image Width="28" Height="28" Source="ms-appx:///Assets/Square44x44Logo.scale-200.png" />
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="24"
+                        FontWeight="SemiBold"
+                        Text="Secrets" />
+                </StackPanel>
                 <TextBlock
                     x:Name="VaultStateText"
                     Grid.Column="1"
                     VerticalAlignment="Center"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Text="Locked" />
+                <Button
+                    Grid.Column="2"
+                    Margin="8,0,0,0"
+                    Click="OnSettingsClicked">
+                    <FontIcon FontSize="16" Glyph="&#xE713;" />
+                </Button>
             </Grid>
 
             <Grid Grid.Row="1" ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="180" />
+                    <ColumnDefinition Width="170" />
                     <ColumnDefinition Width="132" />
                 </Grid.ColumnDefinitions>
                 <TextBox
                     x:Name="SearchBox"
                     PlaceholderText="Search secrets"
                     TextChanged="OnFilterChanged" />
-                <TextBox
+                <ComboBox
                     x:Name="WorkspaceFilterBox"
                     Grid.Column="1"
                     PlaceholderText="Workspace"
-                    TextChanged="OnFilterChanged" />
+                    SelectionChanged="OnFilterChanged" />
                 <ComboBox
                     x:Name="EnvironmentFilterBox"
                     Grid.Column="2"
@@ -88,6 +97,7 @@
                 x:Name="SecretsList"
                 Grid.Row="2"
                 ItemsSource="{x:Bind Secrets, Mode=OneWay}"
+                SelectionChanged="OnSecretSelectionChanged"
                 SelectionMode="Single">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="views:SecretListItem">
@@ -123,102 +133,51 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Button Content="Edit" Click="OnEditClicked" />
-                <Button Grid.Column="1" Content="Copy value" Click="OnCopyClicked" />
-                <Button Grid.Column="2" Content="Delete" Click="OnDeleteClicked" />
-                <Button Grid.Column="3" Content="Export .env" Click="OnExportClicked" />
+                <Button
+                    x:Name="NewSecretButton"
+                    Content="New secret"
+                    Click="OnNewSecretClicked"
+                    Style="{StaticResource PrimaryAction}" />
+                <Button
+                    x:Name="EditButton"
+                    Grid.Column="1"
+                    Content="Edit"
+                    Click="OnEditClicked"
+                    IsEnabled="False" />
+                <Button
+                    x:Name="CopyButton"
+                    Grid.Column="2"
+                    Content="Copy"
+                    Click="OnCopyClicked"
+                    IsEnabled="False" />
+                <Button
+                    x:Name="DeleteButton"
+                    Grid.Column="3"
+                    Content="Delete"
+                    Click="OnDeleteClicked"
+                    IsEnabled="False" />
+                <Button
+                    x:Name="ExportButton"
+                    Grid.Column="4"
+                    Content="Export .env"
+                    Click="OnExportClicked"
+                    IsEnabled="False" />
                 <TextBlock
                     x:Name="StatusText"
-                    Grid.Column="4"
+                    Grid.Column="5"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Text="No secrets saved yet." />
             </Grid>
 
-            <Expander Grid.Row="4" Header="Settings">
-                <StackPanel Padding="0,12,0,0" Spacing="12">
-                    <Grid ColumnSpacing="10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="260" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <PasswordBox
-                            x:Name="PassphraseBox"
-                            PlaceholderText="Vault passphrase" />
-                        <Button
-                            Grid.Column="1"
-                            Content="Unlock"
-                            Click="OnUnlockClicked" />
-                        <Button
-                            Grid.Column="2"
-                            Content="Lock"
-                            Click="OnLockClicked" />
-                        <TextBlock
-                            x:Name="VaultPathText"
-                            Grid.Column="3"
-                            VerticalAlignment="Center"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            TextTrimming="CharacterEllipsis" />
-                    </Grid>
-
-                    <Grid ColumnSpacing="10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Button
-                            x:Name="PlatformUnlockButton"
-                            Content="Use Windows Hello"
-                            Click="OnPlatformUnlockClicked" />
-                        <Button
-                            x:Name="SavePlatformUnlockButton"
-                            Grid.Column="1"
-                            Content="Save for Windows Hello"
-                            Click="OnSavePlatformUnlockClicked" />
-                        <Button
-                            x:Name="RemovePlatformUnlockButton"
-                            Grid.Column="2"
-                            Content="Remove saved unlock"
-                            Click="OnRemovePlatformUnlockClicked" />
-                        <TextBlock
-                            x:Name="PlatformUnlockStatus"
-                            Grid.Column="3"
-                            VerticalAlignment="Center"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="Checking platform unlock..." />
-                    </Grid>
-
-                    <Grid ColumnSpacing="10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="180" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <ComboBox
-                            x:Name="ClipboardClearBox"
-                            Header="Clipboard clear"
-                            SelectedIndex="1">
-                            <ComboBoxItem Content="15 seconds" Tag="15" />
-                            <ComboBoxItem Content="30 seconds" Tag="30" />
-                            <ComboBoxItem Content="60 seconds" Tag="60" />
-                            <ComboBoxItem Content="Never" Tag="0" />
-                        </ComboBox>
-                        <TextBlock
-                            Grid.Column="1"
-                            VerticalAlignment="Bottom"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Text="Applies to copied secret values and .env exports." />
-                    </Grid>
-                </StackPanel>
-            </Expander>
-
-            <Expander Grid.Row="5" Header="Edit or import">
+            <Expander
+                x:Name="EditorExpander"
+                Grid.Row="4"
+                Header="Add secret">
                 <Grid Padding="0,12,0,0" ColumnSpacing="18">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -231,19 +190,21 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="130" />
                             </Grid.ColumnDefinitions>
-                            <TextBox x:Name="WorkspaceBox" Header="Workspace" Text="Default" />
+                            <ComboBox x:Name="WorkspaceBox" Header="Workspace *" SelectedIndex="0">
+                                <ComboBoxItem Content="Default" />
+                            </ComboBox>
                             <ComboBox x:Name="EnvironmentBox" Grid.Column="1" Header="Environment" SelectedIndex="0">
                                 <ComboBoxItem Content="Dev" />
                                 <ComboBoxItem Content="Staging" />
                                 <ComboBoxItem Content="Prod" />
                             </ComboBox>
                         </Grid>
-                        <TextBox x:Name="NameBox" Header="Key" PlaceholderText="OPENAI_API_KEY" />
-                        <PasswordBox x:Name="ValueBox" Header="Value" PlaceholderText="paste a token or key" />
-                        <TextBox x:Name="ProviderBox" Header="Provider" PlaceholderText="OpenAI, Stripe, Vercel" />
+                        <TextBox x:Name="NameBox" Header="Key *" PlaceholderText="OPENAI_API_KEY" />
+                        <PasswordBox x:Name="ValueBox" Header="Value *" PlaceholderText="paste a token or key" />
+                        <TextBox x:Name="ProviderBox" Header="Provider (optional)" PlaceholderText="OpenAI, Stripe, Vercel" />
                         <TextBox
                             x:Name="NotesBox"
-                            Header="Notes"
+                            Header="Notes (optional)"
                             AcceptsReturn="True"
                             MinHeight="72"
                             TextWrapping="Wrap" />
@@ -265,6 +226,9 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Spacing="10">
+                        <TextBlock
+                            FontWeight="SemiBold"
+                            Text="Import .env" />
                         <Grid ColumnSpacing="10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -310,6 +274,151 @@
                     </StackPanel>
                 </Grid>
             </Expander>
+
+            <Grid
+                x:Name="UnlockPane"
+                Grid.Row="1"
+                Grid.RowSpan="4"
+                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+                <StackPanel
+                    Width="420"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="12">
+                    <Image Width="56" Height="56" Source="ms-appx:///Assets/Square44x44Logo.scale-200.png" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontSize="22"
+                        FontWeight="SemiBold"
+                        Text="Unlock your vault" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Enter your vault passphrase. If this is your first time, choose a new passphrase and save your first secret."
+                        TextAlignment="Center"
+                        TextWrapping="Wrap" />
+                    <PasswordBox
+                        x:Name="PassphraseBox"
+                        PlaceholderText="Vault passphrase" />
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button
+                            HorizontalAlignment="Stretch"
+                            Content="Unlock"
+                            Click="OnUnlockClicked"
+                            Style="{StaticResource PrimaryAction}" />
+                        <Button
+                            x:Name="PlatformUnlockButton"
+                            Grid.Column="1"
+                            HorizontalAlignment="Stretch"
+                            Content="Windows Hello"
+                            Click="OnPlatformUnlockClicked" />
+                    </Grid>
+                    <TextBlock
+                        x:Name="PlatformUnlockStatus"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Checking platform unlock..."
+                        TextAlignment="Center"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Grid>
+
+            <Grid
+                x:Name="SettingsOverlay"
+                Grid.Row="0"
+                Grid.RowSpan="5"
+                Background="#99000000"
+                Visibility="Collapsed">
+                <Border
+                    Width="560"
+                    Padding="22"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="8">
+                    <StackPanel Spacing="16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                FontSize="20"
+                                FontWeight="SemiBold"
+                                Text="Settings" />
+                            <Button
+                                Grid.Column="1"
+                                Click="OnCloseSettingsClicked">
+                                <FontIcon FontSize="14" Glyph="&#xE711;" />
+                            </Button>
+                        </Grid>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock FontWeight="SemiBold" Text="Vault" />
+                            <TextBlock
+                                x:Name="VaultPathText"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                TextTrimming="CharacterEllipsis" />
+                            <Button
+                                Content="Lock vault"
+                                Click="OnLockClicked" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock FontWeight="SemiBold" Text="Windows Hello" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="Save your vault passphrase in Windows Credential Manager after Windows Hello or PIN verification." />
+                            <PasswordBox
+                                x:Name="SettingsPassphraseBox"
+                                PlaceholderText="Vault passphrase" />
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Button
+                                    x:Name="SavePlatformUnlockButton"
+                                    Content="Save current passphrase"
+                                    Click="OnSavePlatformUnlockClicked" />
+                                <Button
+                                    x:Name="RemovePlatformUnlockButton"
+                                    Grid.Column="1"
+                                    Content="Remove saved unlock"
+                                    Click="OnRemovePlatformUnlockClicked" />
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Spacing="8">
+                            <TextBlock FontWeight="SemiBold" Text="Clipboard" />
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="180" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox
+                                    x:Name="ClipboardClearBox"
+                                    Header="Auto-clear"
+                                    SelectedIndex="1">
+                                    <ComboBoxItem Content="15 seconds" Tag="15" />
+                                    <ComboBoxItem Content="30 seconds" Tag="30" />
+                                    <ComboBoxItem Content="60 seconds" Tag="60" />
+                                    <ComboBoxItem Content="Never" Tag="0" />
+                                </ComboBox>
+                                <TextBlock
+                                    Grid.Column="1"
+                                    VerticalAlignment="Bottom"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="Applies to copied secret values and .env exports." />
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Grid>
     </Grid>
 </Page>

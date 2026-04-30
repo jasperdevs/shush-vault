@@ -1,4 +1,6 @@
 using Microsoft.UI.Xaml.Navigation;
+using Microsoft.UI.Windowing;
+using WinRT.Interop;
 
 namespace ShushVault.Windows
 {
@@ -39,6 +41,7 @@ namespace ShushVault.Windows
             MainWindow.Title = "Shush Vault";
             _ = rootFrame.Navigate(typeof(MainPage), e.Arguments);
             MainWindow.Activate();
+            ResizeMainWindow(920, 680);
         }
 
         /// <summary>
@@ -60,6 +63,13 @@ namespace ShushVault.Windows
             File.AppendAllText(
                 Path.Combine(root, "crash.log"),
                 $"{DateTimeOffset.Now:u}{Environment.NewLine}{e.Exception}{Environment.NewLine}{Environment.NewLine}");
+        }
+
+        private static void ResizeMainWindow(int width, int height)
+        {
+            var hwnd = WindowNative.GetWindowHandle(MainWindow);
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+            AppWindow.GetFromWindowId(windowId)?.Resize(new global::Windows.Graphics.SizeInt32(width, height));
         }
     }
 }
