@@ -118,11 +118,18 @@ jobs:
   macos:
     needs: resolve-version
     runs-on: macos-latest
+    env:
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+      MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+      MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+      MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
     steps:
       - uses: actions/checkout@v4
       - name: Build
         run: swift build -c release --package-path src/ShushVault.Mac
-      - name: Wrap in .app bundle and ad-hoc sign
+      - name: Wrap in .app bundle
         shell: bash
         run: |
           set -euo pipefail
@@ -151,9 +158,66 @@ jobs:
           </dict>
           </plist>
           EOF
-          codesign --force --deep --sign - "$app"
+      - name: Import signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          rm -f "$CERT_PATH"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          if [ -z "$IDENTITY" ]; then
+            echo "No Developer ID Application identity found in keychain"
+            security find-identity -v "$KEYCHAIN_PATH"
+            exit 1
+          fi
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+      - name: Sign app
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="staging/Shush Vault.app"
+          codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" --keychain "$KEYCHAIN_PATH" "$app/Contents/MacOS/ShushVault"
+          codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" --keychain "$KEYCHAIN_PATH" "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+      - name: Build DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.resolve-version.outputs.version }}"
+          dmg_stage="$RUNNER_TEMP/dmg-stage"
+          mkdir -p "$dmg_stage"
+          cp -R "staging/Shush Vault.app" "$dmg_stage/"
+          ln -s /Applications "$dmg_stage/Applications"
           mkdir -p artifacts
-          (cd staging && zip -r "../artifacts/ShushVault-${version}-macos.zip" "Shush Vault.app")
+          dmg="artifacts/ShushVault-${version}-macos.dmg"
+          hdiutil create -volname "Shush Vault" -srcfolder "$dmg_stage" -ov -format UDZO "$dmg"
+          codesign --force --timestamp --sign "$SIGN_IDENTITY" --keychain "$KEYCHAIN_PATH" "$dmg"
+      - name: Notarize and staple
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.resolve-version.outputs.version }}"
+          dmg="artifacts/ShushVault-${version}-macos.dmg"
+          KEY_PATH="$RUNNER_TEMP/notary.p8"
+          echo "$MACOS_NOTARY_KEY" | base64 --decode > "$KEY_PATH"
+          xcrun notarytool submit "$dmg" \
+            --key "$KEY_PATH" \
+            --key-id "$MACOS_NOTARY_KEY_ID" \
+            --issuer "$MACOS_NOTARY_ISSUER_ID" \
+            --wait
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          rm -f "$KEY_PATH"
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -186,9 +250,7 @@ jobs:
           Run **ShushVault-VERSION-Setup.exe**. Updates ship via Velopack.
 
           ### macOS
-          Unzip and move **Shush Vault.app** to `/Applications`. The build is ad-hoc signed (no Apple Developer ID), so on first launch macOS will block it. To open:
-          - Right-click the app → **Open** → confirm, or
-          - Run `xattr -cr "/Applications/Shush Vault.app"` then double-click.
+          Open **ShushVault-VERSION-macos.dmg** and drag **Shush Vault** to Applications. Signed with Developer ID and notarized by Apple, so it'll just launch.
 
           Requires macOS 14 or newer.
 
