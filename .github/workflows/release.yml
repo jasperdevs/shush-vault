@@ -204,7 +204,7 @@ jobs:
           codesign --force --timestamp --sign "$SIGN_IDENTITY" --keychain "$KEYCHAIN_PATH" "$dmg"
       - name: Notarize and staple
         shell: bash
-        timeout-minutes: 35
+        timeout-minutes: 65
         run: |
           set -euo pipefail
           version="${{ needs.resolve-version.outputs.version }}"
@@ -220,8 +220,8 @@ jobs:
           submission_id=$(echo "$submit_json" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
           echo "Submission ID: $submission_id"
 
-          echo "Waiting up to 30 min for notarization..."
-          xcrun notarytool wait "$submission_id" "${NOTARY_ARGS[@]}" --timeout 30m
+          echo "Waiting up to 60 min for notarization..."
+          xcrun notarytool wait "$submission_id" "${NOTARY_ARGS[@]}" --timeout 60m
 
           echo "Fetching notary log..."
           xcrun notarytool log "$submission_id" "${NOTARY_ARGS[@]}" || true
