@@ -25,11 +25,26 @@ public sealed class VaultService
     public VaultService(string? appDataRoot = null)
     {
         var root = appDataRoot ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "ShushVault");
 
         Directory.CreateDirectory(root);
         filePath = Path.Combine(root, "vault.shush");
+
+        var legacyRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ShushVault");
+        var legacyVault = Path.Combine(legacyRoot, "vault.shush");
+        if (!File.Exists(filePath) && File.Exists(legacyVault))
+        {
+            try
+            {
+                File.Copy(legacyVault, filePath, overwrite: false);
+            }
+            catch
+            {
+            }
+        }
     }
 
     public bool IsUnlocked => !string.IsNullOrWhiteSpace(passphrase);
@@ -88,6 +103,8 @@ public sealed class VaultService
         string environment,
         string provider,
         string notes,
+        string website = "",
+        string iconBase64 = "",
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -101,7 +118,7 @@ public sealed class VaultService
         }
 
         var records = (await LoadAsync(cancellationToken)).ToList();
-        records.Insert(0, SecretRecord.Create(workspace, name, value, environment, provider, notes));
+        records.Insert(0, SecretRecord.Create(workspace, name, value, environment, provider, notes, website, iconBase64));
         await SaveAsync(records, cancellationToken);
         return records;
     }
@@ -114,6 +131,8 @@ public sealed class VaultService
         string environment,
         string provider,
         string notes,
+        string website = "",
+        string iconBase64 = "",
         CancellationToken cancellationToken = default)
     {
         var records = (await LoadAsync(cancellationToken)).ToList();
@@ -123,7 +142,7 @@ public sealed class VaultService
             return records;
         }
 
-        records[index] = records[index].Update(workspace, name, value, environment, provider, notes);
+        records[index] = records[index].Update(workspace, name, value, environment, provider, notes, website, iconBase64);
         await SaveAsync(records, cancellationToken);
         return records;
     }

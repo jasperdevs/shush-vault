@@ -9,9 +9,11 @@ public sealed record SecretRecord(
     string Provider,
     string Notes,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt)
+    DateTimeOffset UpdatedAt,
+    string Website = "",
+    string IconBase64 = "")
 {
-    public static SecretRecord Create(string workspace, string name, string value, string environment, string provider, string notes)
+    public static SecretRecord Create(string workspace, string name, string value, string environment, string provider, string notes, string website = "", string iconBase64 = "")
     {
         var now = DateTimeOffset.UtcNow;
         return new SecretRecord(
@@ -23,10 +25,12 @@ public sealed record SecretRecord(
             provider.Trim(),
             notes.Trim(),
             now,
-            now);
+            now,
+            website.Trim(),
+            iconBase64);
     }
 
-    public SecretRecord Update(string workspace, string name, string value, string environment, string provider, string notes)
+    public SecretRecord Update(string workspace, string name, string value, string environment, string provider, string notes, string website = "", string iconBase64 = "")
         => this with
         {
             Workspace = Clean(workspace, "Default"),
@@ -35,6 +39,8 @@ public sealed record SecretRecord(
             Environment = Clean(environment, "Dev"),
             Provider = provider.Trim(),
             Notes = notes.Trim(),
+            Website = website.Trim(),
+            IconBase64 = iconBase64,
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
