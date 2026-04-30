@@ -139,7 +139,7 @@
             </Grid>
 
             <Expander Grid.Row="4" Header="Settings">
-                <StackPanel Padding="0,12,0,0" Spacing="10">
+                <StackPanel Padding="0,12,0,0" Spacing="12">
                     <Grid ColumnSpacing="10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="260" />
@@ -193,6 +193,27 @@
                             VerticalAlignment="Center"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Text="Checking platform unlock..." />
+                    </Grid>
+
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox
+                            x:Name="ClipboardClearBox"
+                            Header="Clipboard clear"
+                            SelectedIndex="1">
+                            <ComboBoxItem Content="15 seconds" Tag="15" />
+                            <ComboBoxItem Content="30 seconds" Tag="30" />
+                            <ComboBoxItem Content="60 seconds" Tag="60" />
+                            <ComboBoxItem Content="Never" Tag="0" />
+                        </ComboBox>
+                        <TextBlock
+                            Grid.Column="1"
+                            VerticalAlignment="Bottom"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="Applies to copied secret values and .env exports." />
                     </Grid>
                 </StackPanel>
             </Expander>

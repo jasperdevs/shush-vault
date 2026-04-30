@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var importText = ""
     @State private var conflict = "Skip"
     @State private var editorOpen = false
+    @State private var clipboardClear = ClipboardClearOption.thirtySeconds
 
     var body: some View {
         VStack(spacing: 14) {
@@ -43,14 +44,14 @@ struct ContentView: View {
                 }
                 Button("Copy") {
                     guard let row = selectedRow else { return }
-                    store.copyValue(row)
+                    store.copyValue(row, clearAfterSeconds: clipboardClear.seconds)
                 }
                 Button("Delete") {
                     guard let row = selectedRow else { return }
                     store.delete(row)
                 }
                 Button("Export") {
-                    store.exportRows(filteredRows)
+                    store.exportRows(filteredRows, clearAfterSeconds: clipboardClear.seconds)
                 }
             }
 
@@ -199,6 +200,17 @@ struct ContentView: View {
 
                         Spacer()
                     }
+
+                    Picker("Clipboard clear", selection: $clipboardClear) {
+                        ForEach(ClipboardClearOption.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text("Applies to copied secret values and .env exports.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(.top, 8)
             }
@@ -236,5 +248,40 @@ struct ContentView: View {
         value = ""
         provider = ""
         notes = ""
+    }
+}
+
+private enum ClipboardClearOption: String, CaseIterable, Identifiable {
+    case fifteenSeconds
+    case thirtySeconds
+    case sixtySeconds
+    case never
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .fifteenSeconds:
+            return "15s"
+        case .thirtySeconds:
+            return "30s"
+        case .sixtySeconds:
+            return "60s"
+        case .never:
+            return "Never"
+        }
+    }
+
+    var seconds: Int? {
+        switch self {
+        case .fifteenSeconds:
+            return 15
+        case .thirtySeconds:
+            return 30
+        case .sixtySeconds:
+            return 60
+        case .never:
+            return nil
+        }
     }
 }

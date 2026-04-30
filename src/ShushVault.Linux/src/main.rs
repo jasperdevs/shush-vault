@@ -41,6 +41,7 @@ fn main() -> glib::ExitCode {
 fn build_ui(app: &Application) {
     let vault = Rc::new(RefCell::new(Vault::default()));
     let passphrase_state = Rc::new(RefCell::new(String::new()));
+    let clipboard_clear_seconds = Rc::new(RefCell::new(Some(CLIPBOARD_CLEAR_SECONDS)));
     let selected_id = Rc::new(RefCell::new(None::<String>));
     let editing_id = Rc::new(RefCell::new(None::<String>));
     let visible_ids = Rc::new(RefCell::new(Vec::<String>::new()));
@@ -73,14 +74,34 @@ fn build_ui(app: &Application) {
     ));
     platform_unlock_status.set_xalign(0.0);
     platform_unlock_status.set_wrap(true);
-    let settings = Box::new(Orientation::Horizontal, 8);
-    settings.append(&passphrase);
-    settings.append(&unlock);
-    settings.append(&lock);
-    settings.append(&platform_unlock);
-    settings.append(&save_platform_unlock);
-    settings.append(&remove_platform_unlock);
-    settings.append(&platform_unlock_status);
+    let auth_settings = Box::new(Orientation::Horizontal, 8);
+    auth_settings.append(&passphrase);
+    auth_settings.append(&unlock);
+    auth_settings.append(&lock);
+    auth_settings.append(&platform_unlock);
+    auth_settings.append(&save_platform_unlock);
+    auth_settings.append(&remove_platform_unlock);
+    auth_settings.append(&platform_unlock_status);
+
+    let clipboard_clear = ComboBoxText::new();
+    clipboard_clear.append(Some("15"), "15 seconds");
+    clipboard_clear.append(Some("30"), "30 seconds");
+    clipboard_clear.append(Some("60"), "60 seconds");
+    clipboard_clear.append(Some("never"), "Never");
+    clipboard_clear.set_active_id(Some("30"));
+    let clipboard_settings = Box::new(Orientation::Horizontal, 8);
+    let clipboard_label = Label::new(Some("Clipboard clear"));
+    clipboard_label.set_xalign(0.0);
+    let clipboard_hint = Label::new(Some("Applies to copied secret values and .env exports."));
+    clipboard_hint.set_xalign(0.0);
+    clipboard_hint.add_css_class("dim-label");
+    clipboard_settings.append(&clipboard_label);
+    clipboard_settings.append(&clipboard_clear);
+    clipboard_settings.append(&clipboard_hint);
+
+    let settings = Box::new(Orientation::Vertical, 10);
+    settings.append(&auth_settings);
+    settings.append(&clipboard_settings);
     let settings_expander = Expander::builder()
         .label("Settings")
         .child(&settings)
@@ -476,7 +497,8 @@ fn build_ui(app: &Application) {
         @weak status,
         @strong vault,
         @strong passphrase_state,
-        @strong selected_id
+        @strong selected_id,
+        @strong clipboard_clear_seconds
         => move |_| {
             if passphrase_state.borrow().is_empty() {
                 status.set_text("Unlock the vault first.");
@@ -494,11 +516,9 @@ fn build_ui(app: &Application) {
                 return;
             };
 
-            if copy_text_with_delayed_clear(&record.value) {
-                status.set_text(&format!(
-                    "Copied {}. Clipboard clears in {CLIPBOARD_CLEAR_SECONDS}s.",
-                    record.name
-                ));
+            let clear_seconds = *clipboard_clear_seconds.borrow();
+            if copy_text_with_delayed_clear(&record.value, clear_seconds) {
+                status.set_text(&clipboard_status(&format!("Copied {}.", record.name), clear_seconds));
             } else {
                 status.set_text("Clipboard is not available.");
             }
@@ -604,7 +624,8 @@ fn build_ui(app: &Application) {
         @weak workspace_filter,
         @weak environment_filter,
         @strong vault,
-        @strong passphrase_state
+        @strong passphrase_state,
+        @strong clipboard_clear_seconds
         => move |_| {
             if passphrase_state.borrow().is_empty() {
                 status.set_text("Unlock the vault first.");
@@ -627,13 +648,26 @@ fn build_ui(app: &Application) {
                 return;
             }
 
-            if copy_text_with_delayed_clear(&content) {
-                status.set_text(&format!(
-                    "Copied visible secrets as .env. Clipboard clears in {CLIPBOARD_CLEAR_SECONDS}s."
-                ));
+            let clear_seconds = *clipboard_clear_seconds.borrow();
+            if copy_text_with_delayed_clear(&content, clear_seconds) {
+                status.set_text(&clipboard_status("Copied visible secrets as .env.", clear_seconds));
             } else {
                 status.set_text("Clipboard is not available.");
             }
+        }
+    ));
+
+    clipboard_clear.connect_changed(glib::clone!(
+        @weak status,
+        @strong clipboard_clear_seconds
+        => move |combo| {
+            let selected = selected_clipboard_clear_seconds(combo);
+            *clipboard_clear_seconds.borrow_mut() = selected;
+            let message = match selected {
+                Some(seconds) => format!("Clipboard clears after {seconds}s."),
+                None => "Clipboard auto-clear is off.".to_owned(),
+            };
+            status.set_text(&message);
         }
     ));
 
@@ -867,6 +901,15 @@ fn selected_conflict_mode(conflict: &ComboBoxText) -> ConflictMode {
     }
 }
 
+fn selected_clipboard_clear_seconds(combo: &ComboBoxText) -> Option<u32> {
+    match combo.active_id().as_deref() {
+        Some("15") => Some(15),
+        Some("60") => Some(60),
+        Some("never") => None,
+        _ => Some(CLIPBOARD_CLEAR_SECONDS),
+    }
+}
+
 fn find_record_by_id<'a>(vault: &'a Vault, id: &str) -> Option<&'a SecretRecord> {
     vault
         .visible_records()
@@ -1016,19 +1059,21 @@ fn text_view_text(view: &TextView) -> String {
         .to_string()
 }
 
-fn copy_text_with_delayed_clear(text: &str) -> bool {
+fn copy_text_with_delayed_clear(text: &str, clear_seconds: Option<u32>) -> bool {
     let Some(display) = Display::default() else {
         return false;
     };
 
     display.clipboard().set_text(text);
-    schedule_clipboard_clear(text.to_owned());
+    if let Some(clear_seconds) = clear_seconds {
+        schedule_clipboard_clear(text.to_owned(), clear_seconds);
+    }
     true
 }
 
-fn schedule_clipboard_clear(expected_text: String) {
+fn schedule_clipboard_clear(expected_text: String, clear_seconds: u32) {
     glib::MainContext::default().spawn_local(async move {
-        glib::timeout_future_seconds(CLIPBOARD_CLEAR_SECONDS).await;
+        glib::timeout_future_seconds(clear_seconds).await;
 
         let Some(display) = Display::default() else {
             return;
@@ -1041,6 +1086,13 @@ fn schedule_clipboard_clear(expected_text: String) {
             }
         }
     });
+}
+
+fn clipboard_status(prefix: &str, clear_seconds: Option<u32>) -> String {
+    match clear_seconds {
+        Some(seconds) => format!("{prefix} Clipboard clears in {seconds}s."),
+        None => format!("{prefix} Clipboard auto-clear is off."),
+    }
 }
 
 fn unquote(value: &str) -> &str {

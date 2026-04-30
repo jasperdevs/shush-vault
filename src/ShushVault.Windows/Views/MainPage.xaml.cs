@@ -218,8 +218,9 @@ namespace ShushVault.Windows.Views
             var package = new DataPackage();
             package.SetText(record.Value);
             Clipboard.SetContent(package);
-            _ = ClearClipboardLaterAsync(record.Value);
-            StatusText.Text = $"Copied {record.Name}. Clipboard clears in 30s.";
+            var clearSeconds = SelectedClipboardClearSeconds();
+            _ = ClearClipboardLaterAsync(record.Value, clearSeconds);
+            StatusText.Text = ClipboardStatus($"Copied {record.Name}.", clearSeconds);
         }
 
         private async void OnChooseEnvClicked(object sender, RoutedEventArgs e)
@@ -283,8 +284,9 @@ namespace ShushVault.Windows.Views
             var package = new DataPackage();
             package.SetText(exported);
             Clipboard.SetContent(package);
-            _ = ClearClipboardLaterAsync(exported);
-            StatusText.Text = "Copied visible secrets as .env. Clipboard clears in 30s.";
+            var clearSeconds = SelectedClipboardClearSeconds();
+            _ = ClearClipboardLaterAsync(exported, clearSeconds);
+            StatusText.Text = ClipboardStatus("Copied visible secrets as .env.", clearSeconds);
         }
 
         private void OnEnvImportTextChanged(object sender, TextChangedEventArgs e)
@@ -396,9 +398,14 @@ namespace ShushVault.Windows.Views
             RemovePlatformUnlockButton.IsEnabled = state.HasSavedPassphrase;
         }
 
-        private static async Task ClearClipboardLaterAsync(string expectedText)
+        private static async Task ClearClipboardLaterAsync(string expectedText, int clearSeconds)
         {
-            await Task.Delay(TimeSpan.FromSeconds(30));
+            if (clearSeconds <= 0)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(clearSeconds));
             var content = Clipboard.GetContent();
             if (!content.Contains(StandardDataFormats.Text))
             {
@@ -413,6 +420,22 @@ namespace ShushVault.Windows.Views
 
             Clipboard.SetContent(new DataPackage());
         }
+
+        private int SelectedClipboardClearSeconds()
+        {
+            if (ClipboardClearBox?.SelectedItem is ComboBoxItem item &&
+                int.TryParse(item.Tag?.ToString(), out var seconds))
+            {
+                return seconds;
+            }
+
+            return 30;
+        }
+
+        private static string ClipboardStatus(string prefix, int clearSeconds)
+            => clearSeconds > 0
+                ? $"{prefix} Clipboard clears in {clearSeconds}s."
+                : $"{prefix} Clipboard auto-clear is off.";
 
         private string SelectedEnvironment()
             => (EnvironmentBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Dev";

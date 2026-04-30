@@ -200,14 +200,17 @@ final class VaultStore: ObservableObject {
         save()
     }
 
-    func copyValue(_ row: SecretRow) {
-        copyToClipboard(row.value)
-        status = "Copied \(row.name). Clipboard clears in 30s."
+    func copyValue(_ row: SecretRow, clearAfterSeconds: Int?) {
+        copyToClipboard(row.value, clearAfterSeconds: clearAfterSeconds)
+        status = clipboardStatus(prefix: "Copied \(row.name).", clearAfterSeconds: clearAfterSeconds)
     }
 
-    func exportRows(_ rowsToExport: [SecretRow]) {
-        copyToClipboard(rowsToExport.map { "\($0.name)=\(Self.quoteIfNeeded($0.value))" }.joined(separator: "\n"))
-        status = "Copied visible secrets as .env. Clipboard clears in 30s."
+    func exportRows(_ rowsToExport: [SecretRow], clearAfterSeconds: Int?) {
+        copyToClipboard(
+            rowsToExport.map { "\($0.name)=\(Self.quoteIfNeeded($0.value))" }.joined(separator: "\n"),
+            clearAfterSeconds: clearAfterSeconds
+        )
+        status = clipboardStatus(prefix: "Copied visible secrets as .env.", clearAfterSeconds: clearAfterSeconds)
     }
 
     func importEnv(content: String, workspace: String, environment: String, provider: String, conflict: String) {
@@ -380,16 +383,28 @@ final class VaultStore: ObservableObject {
         return value
     }
 
-    private func copyToClipboard(_ text: String) {
+    private func copyToClipboard(_ text: String, clearAfterSeconds: Int?) {
         let clipboard = NSPasteboard.general
         clipboard.clearContents()
         clipboard.setString(text, forType: .string)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
+        guard let clearAfterSeconds, clearAfterSeconds > 0 else {
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(clearAfterSeconds)) {
             if NSPasteboard.general.string(forType: .string) == text {
                 NSPasteboard.general.clearContents()
             }
         }
+    }
+
+    private func clipboardStatus(prefix: String, clearAfterSeconds: Int?) -> String {
+        guard let clearAfterSeconds, clearAfterSeconds > 0 else {
+            return "\(prefix) Clipboard auto-clear is off."
+        }
+
+        return "\(prefix) Clipboard clears in \(clearAfterSeconds)s."
     }
 }
 
