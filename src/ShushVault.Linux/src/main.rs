@@ -46,7 +46,7 @@ fn build_ui(app: &Application) {
     let visible_ids = Rc::new(RefCell::new(Vec::<String>::new()));
     let vault_path = default_vault_path();
 
-    let root = Box::new(Orientation::Horizontal, 18);
+    let root = Box::new(Orientation::Vertical, 14);
     root.set_margin_top(24);
     root.set_margin_bottom(24);
     root.set_margin_start(24);
@@ -121,10 +121,6 @@ fn build_ui(app: &Application) {
     editor.append(&import_scroll);
     editor.append(&import_actions);
     editor.append(&status);
-
-    let editor_scroll = ScrolledWindow::new();
-    editor_scroll.set_min_content_width(360);
-    editor_scroll.set_child(Some(&editor));
 
     let list_panel = Box::new(Orientation::Vertical, 12);
     let search = Entry::builder().placeholder_text("Search secrets").build();
@@ -655,13 +651,13 @@ fn build_ui(app: &Application) {
         }
     ));
 
-    root.append(&editor_scroll);
     root.append(&list_panel);
+    root.append(&editor);
 
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Shush Vault")
-        .default_width(1100)
+        .default_width(980)
         .default_height(720)
         .child(&root)
         .build();

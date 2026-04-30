@@ -13,19 +13,7 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
                 <!-- Other merged dictionaries here -->
             </ResourceDictionary.MergedDictionaries>
-            <!-- Other app resources here -->
-            <Color x:Key="Primary">#F5F5F5</Color>
-
-            <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource Primary}" />
-            <SolidColorBrush x:Key="WhiteBrush" Color="White" />
-            <SolidColorBrush x:Key="BlackBrush" Color="Black" />
-
             <x:Double x:Key="AppFontSize">14</x:Double>
-
-            <Style x:Key="MyLabel" TargetType="TextBlock">
-                <Setter Property="Foreground"
-                        Value="{StaticResource PrimaryBrush}" />
-            </Style>
 
             <Style x:Key="Action" TargetType="Button">
                 <Setter Property="FontSize"
@@ -36,11 +24,11 @@
 
             <Style x:Key="PrimaryAction"
                    TargetType="Button"
-                   BasedOn="{StaticResource Action}">
-                <Setter Property="Background" Value="#F5F5F5" />
-                <Setter Property="CornerRadius"
-                        Value="6" />
-                <Setter Property="Foreground" Value="#111111" />
+                   BasedOn="{StaticResource AccentButtonStyle}">
+                <Setter Property="FontSize"
+                        Value="{StaticResource AppFontSize}" />
+                <Setter Property="Padding"
+                        Value="14,10" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>
