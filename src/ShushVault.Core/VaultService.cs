@@ -254,9 +254,20 @@ public sealed class VaultService
             throw new CryptographicException("Unsupported vault format.");
         }
 
-        var salt = Convert.FromBase64String(envelope.Salt);
-        var nonce = Convert.FromBase64String(envelope.Nonce);
-        var payload = Convert.FromBase64String(envelope.Ciphertext);
+        byte[] salt;
+        byte[] nonce;
+        byte[] payload;
+        try
+        {
+            salt = Convert.FromBase64String(envelope.Salt);
+            nonce = Convert.FromBase64String(envelope.Nonce);
+            payload = Convert.FromBase64String(envelope.Ciphertext);
+        }
+        catch (FormatException exception)
+        {
+            throw new CryptographicException("Invalid vault file.", exception);
+        }
+
         if (salt.Length != SaltLength || nonce.Length != NonceLength || payload.Length < TagLength)
         {
             throw new CryptographicException("Invalid vault file.");

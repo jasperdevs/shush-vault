@@ -255,6 +255,8 @@ fn fallback(value: &str, default_value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn encrypts_and_decrypts_vault_without_plaintext_leakage() {
@@ -310,6 +312,67 @@ mod tests {
     }
 
     #[test]
+    fn decrypts_committed_v1_fixture() {
+        let fixture = fs::read(fixture_path()).unwrap();
+        let encrypted: EncryptedVault = serde_json::from_slice(&fixture).unwrap();
+        let vault = decrypt_vault(&encrypted, "fixture-passphrase").unwrap();
+
+        assert_eq!(vault.records.len(), 1);
+        assert_eq!(vault.records[0].workspace, "Fixture");
+        assert_eq!(vault.records[0].name, "FIXTURE_KEY");
+        assert_eq!(vault.records[0].value, "fixture-secret");
+        assert_eq!(vault.records[0].provider, "Tests");
+    }
+
+    #[test]
+    fn rejects_malformed_envelopes() {
+        let base = EncryptedVault {
+            version: FORMAT_VERSION,
+            kdf: KDF_NAME.to_owned(),
+            iterations: KDF_ITERATIONS,
+            cipher: CIPHER_NAME.to_owned(),
+            salt: STANDARD.encode([0_u8; SALT_LEN]),
+            nonce: STANDARD.encode([0_u8; NONCE_LEN]),
+            ciphertext: STANDARD.encode([0_u8; KEY_LEN]),
+        };
+
+        let mut wrong_version = base.clone();
+        wrong_version.version = FORMAT_VERSION + 1;
+        assert!(matches!(
+            decrypt_vault(&wrong_version, "passphrase"),
+            Err(VaultError::InvalidPayload)
+        ));
+
+        let mut wrong_kdf = base.clone();
+        wrong_kdf.kdf = "argon2id".to_owned();
+        assert!(matches!(
+            decrypt_vault(&wrong_kdf, "passphrase"),
+            Err(VaultError::InvalidPayload)
+        ));
+
+        let mut wrong_cipher = base.clone();
+        wrong_cipher.cipher = "aes-128-gcm".to_owned();
+        assert!(matches!(
+            decrypt_vault(&wrong_cipher, "passphrase"),
+            Err(VaultError::InvalidPayload)
+        ));
+
+        let mut short_salt = base.clone();
+        short_salt.salt = STANDARD.encode([0_u8; SALT_LEN - 1]);
+        assert!(matches!(
+            decrypt_vault(&short_salt, "passphrase"),
+            Err(VaultError::InvalidPayload)
+        ));
+
+        let mut invalid_base64 = base;
+        invalid_base64.nonce = "***".to_owned();
+        assert!(matches!(
+            decrypt_vault(&invalid_base64, "passphrase"),
+            Err(VaultError::Base64(_))
+        ));
+    }
+
+    #[test]
     fn updates_and_deletes_records_by_scope() {
         let mut vault = Vault::default();
         vault.add(SecretRecord::create("App", "KEY", "old", "Dev", "", ""));
@@ -329,5 +392,9 @@ mod tests {
 
         assert!(vault.delete("KEY", Some("App"), Some("Dev")));
         assert!(vault.find("KEY", Some("App"), Some("Dev")).is_none());
+    }
+
+    fn fixture_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/vault-v1.fixture.json")
     }
 }

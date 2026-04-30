@@ -41,5 +41,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Rust tests
         run: cargo test
-      - name: macOS app build
-        run: swift build --package-path src/ShushVault.Mac
+      - name: macOS app tests
+        run: swift test --package-path src/ShushVault.Mac

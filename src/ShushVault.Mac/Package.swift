@@ -19,6 +19,11 @@ let package = Package(
                 "ContentView.swift",
                 "VaultStore.swift"
             ]
+        ),
+        .testTarget(
+            name: "ShushVaultMacTests",
+            dependencies: ["ShushVaultMac"],
+            path: "Tests"
         )
     ]
 )

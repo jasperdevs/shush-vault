@@ -72,4 +72,101 @@ public sealed class VaultServiceTests
 
         await Assert.ThrowsExceptionAsync<System.Security.Cryptography.CryptographicException>(() => service.LoadAsync());
     }
+
+    [TestMethod]
+    public async Task LoadAsyncDecryptsCommittedV1Fixture()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ShushVault.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        File.Copy(FindFixturePath(), Path.Combine(root, "vault.shush"));
+
+        var service = new VaultService(root);
+        service.Unlock("fixture-passphrase");
+
+        var records = await service.LoadAsync();
+
+        Assert.AreEqual(1, records.Count);
+        Assert.AreEqual("Fixture", records[0].Workspace);
+        Assert.AreEqual("FIXTURE_KEY", records[0].Name);
+        Assert.AreEqual("fixture-secret", records[0].Value);
+        Assert.AreEqual("Tests", records[0].Provider);
+    }
+
+    [TestMethod]
+    public async Task LoadAsyncRejectsMalformedEnvelopes()
+    {
+        await AssertEnvelopeRejected(new VaultEnvelope(
+            2,
+            "pbkdf2-sha256",
+            310_000,
+            "aes-256-gcm",
+            Convert.ToBase64String(new byte[16]),
+            Convert.ToBase64String(new byte[12]),
+            Convert.ToBase64String(new byte[32])));
+
+        await AssertEnvelopeRejected(new VaultEnvelope(
+            1,
+            "argon2id",
+            310_000,
+            "aes-256-gcm",
+            Convert.ToBase64String(new byte[16]),
+            Convert.ToBase64String(new byte[12]),
+            Convert.ToBase64String(new byte[32])));
+
+        await AssertEnvelopeRejected(new VaultEnvelope(
+            1,
+            "pbkdf2-sha256",
+            310_000,
+            "aes-128-gcm",
+            Convert.ToBase64String(new byte[16]),
+            Convert.ToBase64String(new byte[12]),
+            Convert.ToBase64String(new byte[32])));
+
+        await AssertEnvelopeRejected(new VaultEnvelope(
+            1,
+            "pbkdf2-sha256",
+            310_000,
+            "aes-256-gcm",
+            Convert.ToBase64String(new byte[15]),
+            Convert.ToBase64String(new byte[12]),
+            Convert.ToBase64String(new byte[32])));
+
+        await AssertEnvelopeRejected(new VaultEnvelope(
+            1,
+            "pbkdf2-sha256",
+            310_000,
+            "aes-256-gcm",
+            Convert.ToBase64String(new byte[16]),
+            "***",
+            Convert.ToBase64String(new byte[32])));
+    }
+
+    private static async Task AssertEnvelopeRejected(VaultEnvelope envelope)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ShushVault.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "vault.shush"), JsonSerializer.Serialize(envelope));
+
+        var service = new VaultService(root);
+        service.Unlock("passphrase");
+
+        await Assert.ThrowsExceptionAsync<System.Security.Cryptography.CryptographicException>(() => service.LoadAsync());
+    }
+
+    private static string FindFixturePath()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var fixture = Path.Combine(directory.FullName, "tests", "fixtures", "vault-v1.fixture.json");
+            if (File.Exists(fixture))
+            {
+                return fixture;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException("Could not find vault fixture.");
+    }
 }
