@@ -15,7 +15,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <controls:WindowTitleBar x:Name="TitleBar" Title="Secrets" />
+        <controls:WindowTitleBar x:Name="TitleBar" Title="Shush Vault" />
 
         <Grid Grid.Row="1" Padding="24,4,24,16" RowSpacing="12">
             <Grid.RowDefinitions>

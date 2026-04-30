@@ -6,63 +6,61 @@ param(
 
 Add-Type -AssemblyName System.Drawing
 
-# Each rect: x, y, w, h, hex (32x32 logical canvas).
-# Mirrors assets/shush-vault-logo.svg.
-$rects = @(
-    @(0,  0, 6,  32, 'EF4444'),
-    @(6,  0, 5,  32, 'F97316'),
-    @(11, 0, 5,  32, 'FACC15'),
-    @(16, 0, 5,  32, '22C55E'),
-    @(21, 0, 5,  32, '3B82F6'),
-    @(26, 0, 6,  32, 'A855F7'),
-
-    @(13, 3,  6,  1, 'FFFFFF'),
-    @(12, 4,  8,  1, 'FFFFFF'),
-    @(11, 5,  10, 1, 'FFFFFF'),
-    @(11, 6,  3,  1, 'FFFFFF'),
-    @(18, 6,  3,  1, 'FFFFFF'),
-    @(11, 7,  2,  1, 'FFFFFF'),
-    @(19, 7,  2,  1, 'FFFFFF'),
-    @(11, 8,  2,  1, 'FFFFFF'),
-    @(19, 8,  2,  1, 'FFFFFF'),
-    @(11, 9,  3,  1, 'FFFFFF'),
-    @(18, 9,  3,  1, 'FFFFFF'),
-    @(11, 10, 10, 1, 'FFFFFF'),
-    @(12, 11, 8,  1, 'FFFFFF'),
-    @(13, 12, 6,  1, 'FFFFFF'),
-
-    @(14, 13, 4, 10, 'FFFFFF'),
-
-    @(14, 23, 7, 1, 'FFFFFF'),
-    @(14, 24, 2, 1, 'FFFFFF'),
-    @(14, 25, 5, 1, 'FFFFFF'),
-    @(14, 26, 2, 1, 'FFFFFF'),
-    @(14, 27, 3, 1, 'FFFFFF')
-)
-
+# White key with dark stroke, rotated -45deg. 32x32 logical canvas (mirrors SVG).
 function Render-Png([int] $size) {
-    $scale = $size / 32.0
     $bmp = New-Object System.Drawing.Bitmap($size, $size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::None
-    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
-    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
 
-    foreach ($r in $rects) {
-        $hex = $r[4]
-        $color = [System.Drawing.Color]::FromArgb(
-            255,
-            [Convert]::ToInt32($hex.Substring(0,2),16),
-            [Convert]::ToInt32($hex.Substring(2,2),16),
-            [Convert]::ToInt32($hex.Substring(4,2),16))
-        $brush = New-Object System.Drawing.SolidBrush($color)
-        $x = [int]([Math]::Round($r[0] * $scale))
-        $y = [int]([Math]::Round($r[1] * $scale))
-        $w = [int]([Math]::Round(($r[0] + $r[2]) * $scale)) - $x
-        $h = [int]([Math]::Round(($r[1] + $r[3]) * $scale)) - $y
-        $g.FillRectangle($brush, $x, $y, $w, $h)
-        $brush.Dispose()
-    }
+    $scale = $size / 32.0
+
+    # Rotate around center.
+    $g.TranslateTransform(($size / 2.0), ($size / 2.0))
+    $g.RotateTransform(-45)
+    $g.TranslateTransform(-($size / 2.0), -($size / 2.0))
+
+    $strokeWidth = [Math]::Max(1.0, 1.2 * $scale)
+    $stroke = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(255, 10, 10, 10), $strokeWidth)
+    $stroke.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
+    $stroke.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $stroke.EndCap   = [System.Drawing.Drawing2D.LineCap]::Round
+    $whiteBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
+
+    function S([double] $v) { return $v * $scale }
+
+    # Bow with inner hole (annulus): two concentric ellipses with FillMode.Alternate.
+    $bow = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $bow.FillMode = [System.Drawing.Drawing2D.FillMode]::Alternate
+    $outerR = S 5.0
+    $innerR = S 2.0
+    $cx = S 16.0
+    $cy = S 6.0
+    $bow.AddEllipse(($cx - $outerR), ($cy - $outerR), ($outerR * 2), ($outerR * 2))
+    $bow.StartFigure()
+    $bow.AddEllipse(($cx - $innerR), ($cy - $innerR), ($innerR * 2), ($innerR * 2))
+    $g.FillPath($whiteBrush, $bow)
+    $g.DrawPath($stroke, $bow)
+    $bow.Dispose()
+
+    # Shaft.
+    $shaftRect = [System.Drawing.RectangleF]::FromLTRB((S 14.5), (S 11.0), (S 17.5), (S 27.0))
+    $g.FillRectangle($whiteBrush, $shaftRect)
+    $g.DrawRectangle($stroke, $shaftRect.X, $shaftRect.Y, $shaftRect.Width, $shaftRect.Height)
+
+    # Long tooth.
+    $tooth1 = [System.Drawing.RectangleF]::FromLTRB((S 17.5), (S 20.0), (S 20.5), (S 21.5))
+    $g.FillRectangle($whiteBrush, $tooth1)
+    $g.DrawRectangle($stroke, $tooth1.X, $tooth1.Y, $tooth1.Width, $tooth1.Height)
+
+    # Short tooth.
+    $tooth2 = [System.Drawing.RectangleF]::FromLTRB((S 17.5), (S 24.0), (S 19.5), (S 25.5))
+    $g.FillRectangle($whiteBrush, $tooth2)
+    $g.DrawRectangle($stroke, $tooth2.X, $tooth2.Y, $tooth2.Width, $tooth2.Height)
+
+    $stroke.Dispose()
+    $whiteBrush.Dispose()
     $g.Dispose()
 
     $ms = New-Object System.IO.MemoryStream
@@ -77,14 +75,13 @@ foreach ($s in $sizes) {
     $pngs += ,(Render-Png $s)
 }
 
-# Build .ico (multi-image, each entry stored as PNG)
 $count = $pngs.Count
 $out = New-Object System.IO.MemoryStream
 $bw = New-Object System.IO.BinaryWriter($out)
 
-$bw.Write([UInt16] 0)        # reserved
-$bw.Write([UInt16] 1)        # type (1 = icon)
-$bw.Write([UInt16] $count)   # number of images
+$bw.Write([UInt16] 0)
+$bw.Write([UInt16] 1)
+$bw.Write([UInt16] $count)
 
 $headerSize = 6 + (16 * $count)
 $dataOffset = $headerSize
@@ -93,14 +90,14 @@ for ($i = 0; $i -lt $count; $i++) {
     $data = $pngs[$i]
     $dim = if ($size -ge 256) { 0 } else { [byte] $size }
 
-    $bw.Write([byte] $dim)            # width
-    $bw.Write([byte] $dim)            # height
-    $bw.Write([byte] 0)               # palette
-    $bw.Write([byte] 0)               # reserved
-    $bw.Write([UInt16] 1)             # color planes
-    $bw.Write([UInt16] 32)            # bits per pixel
-    $bw.Write([UInt32] $data.Length)  # image size
-    $bw.Write([UInt32] $dataOffset)   # offset
+    $bw.Write([byte] $dim)
+    $bw.Write([byte] $dim)
+    $bw.Write([byte] 0)
+    $bw.Write([byte] 0)
+    $bw.Write([UInt16] 1)
+    $bw.Write([UInt16] 32)
+    $bw.Write([UInt32] $data.Length)
+    $bw.Write([UInt32] $dataOffset)
     $dataOffset += $data.Length
 }
 

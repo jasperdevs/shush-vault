@@ -49,7 +49,7 @@ internal sealed class SettingsWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(36) });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var titleBar = new WindowTitleBar { Title = "Settings" };
+        var titleBar = new WindowTitleBar { Title = "Shush Vault" };
         root.Children.Add(titleBar);
 
         var scroll = new ScrollViewer
