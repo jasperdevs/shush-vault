@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import AppKit
 import Security
 
 private let formatVersion = 1
@@ -106,9 +107,112 @@ final class VaultStore: ObservableObject {
         save()
     }
 
+    func update(id: String, workspace: String, name: String, value: String, environment: String, provider: String, notes: String) {
+        guard let index = rows.firstIndex(where: { $0.id == id }) else {
+            status = "Select a secret to edit."
+            return
+        }
+
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty, !value.isEmpty else {
+            status = "Key and value are required."
+            return
+        }
+
+        rows[index] = SecretRow(
+            id: rows[index].id,
+            workspace: Self.clean(workspace, fallback: "Default"),
+            name: cleanName,
+            value: value,
+            environment: Self.clean(environment, fallback: "Dev"),
+            provider: provider.trimmingCharacters(in: .whitespacesAndNewlines),
+            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
+            createdAt: rows[index].createdAt,
+            updatedAt: Self.isoNow(),
+            deletedAt: rows[index].deletedAt
+        )
+
+        save()
+    }
+
     func delete(_ row: SecretRow) {
         rows.removeAll { $0.id == row.id }
         save()
+    }
+
+    func copyValue(_ row: SecretRow) {
+        copyToClipboard(row.value)
+        status = "Copied \(row.name). Clipboard clears in 30s."
+    }
+
+    func exportRows(_ rowsToExport: [SecretRow]) {
+        copyToClipboard(rowsToExport.map { "\($0.name)=\(Self.quoteIfNeeded($0.value))" }.joined(separator: "\n"))
+        status = "Copied visible secrets as .env. Clipboard clears in 30s."
+    }
+
+    func importEnv(content: String, workspace: String, environment: String, provider: String, conflict: String) {
+        guard isUnlocked else {
+            status = "Unlock the vault first."
+            return
+        }
+
+        var imported = 0
+        var skipped = 0
+        for item in Self.parseEnv(content: content) {
+            guard let key = item.key, let value = item.value else {
+                skipped += 1
+                continue
+            }
+
+            let cleanWorkspace = Self.clean(workspace, fallback: "Default")
+            let cleanEnvironment = Self.clean(environment, fallback: "Dev")
+            let existingIndex = rows.firstIndex {
+                $0.workspace.caseInsensitiveCompare(cleanWorkspace) == .orderedSame &&
+                    $0.environment.caseInsensitiveCompare(cleanEnvironment) == .orderedSame &&
+                    $0.name.caseInsensitiveCompare(key) == .orderedSame
+            }
+
+            if let existingIndex, conflict == "Skip" {
+                skipped += 1
+                continue
+            }
+
+            if let existingIndex, conflict == "Overwrite" {
+                rows[existingIndex] = SecretRow(
+                    id: rows[existingIndex].id,
+                    workspace: cleanWorkspace,
+                    name: key,
+                    value: value,
+                    environment: cleanEnvironment,
+                    provider: provider.trimmingCharacters(in: .whitespacesAndNewlines),
+                    notes: rows[existingIndex].notes,
+                    createdAt: rows[existingIndex].createdAt,
+                    updatedAt: Self.isoNow(),
+                    deletedAt: rows[existingIndex].deletedAt
+                )
+                imported += 1
+                continue
+            }
+
+            let finalKey = existingIndex == nil ? key : "\(key)_\(Self.importSuffix())"
+            let now = Self.isoNow()
+            rows.insert(SecretRow(
+                id: UUID().uuidString.lowercased(),
+                workspace: cleanWorkspace,
+                name: finalKey,
+                value: value,
+                environment: cleanEnvironment,
+                provider: provider.trimmingCharacters(in: .whitespacesAndNewlines),
+                notes: ".env import",
+                createdAt: now,
+                updatedAt: now,
+                deletedAt: nil
+            ), at: 0)
+            imported += 1
+        }
+
+        save()
+        status = "Imported \(imported), skipped \(skipped)."
     }
 
     private func save() {
@@ -181,6 +285,51 @@ final class VaultStore: ObservableObject {
 
     private static func isoNow() -> String {
         ISO8601DateFormatter().string(from: Date())
+    }
+
+    private static func importSuffix() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMddHHmmss"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter.string(from: Date())
+    }
+
+    private static func parseEnv(content: String) -> [(key: String?, value: String?)] {
+        content.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false).map { rawLine in
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty, !line.hasPrefix("#"), let separator = line.firstIndex(of: "="), separator != line.startIndex else {
+                return (nil, nil)
+            }
+
+            let key = String(line[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+            var value = String(line[line.index(after: separator)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.count >= 2,
+               (value.hasPrefix("\"") && value.hasSuffix("\"")) || (value.hasPrefix("'") && value.hasSuffix("'")) {
+                value = String(value.dropFirst().dropLast())
+            }
+
+            return (key, value)
+        }
+    }
+
+    private static func quoteIfNeeded(_ value: String) -> String {
+        if value.contains(where: { $0.isWhitespace }) || value.contains("#") || value.contains("\"") {
+            return "\"\(value.replacingOccurrences(of: "\"", with: "\\\""))\""
+        }
+
+        return value
+    }
+
+    private func copyToClipboard(_ text: String) {
+        let clipboard = NSPasteboard.general
+        clipboard.clearContents()
+        clipboard.setString(text, forType: .string)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
+            if NSPasteboard.general.string(forType: .string) == text {
+                NSPasteboard.general.clearContents()
+            }
+        }
     }
 }
 
