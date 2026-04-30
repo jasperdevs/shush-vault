@@ -461,6 +461,11 @@ namespace ShushVault.Windows.Views
 
         private void SetSelectionActions(bool hasSelection)
         {
+            if (EditButton is null || CopyButton is null || DeleteButton is null || ExportButton is null)
+            {
+                return;
+            }
+
             EditButton.IsEnabled = hasSelection && vaultService.IsUnlocked;
             CopyButton.IsEnabled = hasSelection && vaultService.IsUnlocked;
             DeleteButton.IsEnabled = hasSelection && vaultService.IsUnlocked;
