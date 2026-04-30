@@ -12,8 +12,8 @@
   </p>
 
   <p>
-    Shush Vault is a local-first vault for storing, organizing, importing, and copying secrets and API keys from a native desktop app and CLI.
-    The repo is native-first: WinUI 3 on Windows, SwiftUI on macOS, GTK/libadwaita on Linux, and a shared encrypted vault model underneath.
+    Shush Vault is a local-first vault for storing, organizing, importing, and copying secrets and API keys from a Windows desktop app and cross-platform CLI.
+    The repo is native-first and Windows-first right now: WinUI 3 is the verified desktop app, with SwiftUI and GTK sources kept separate until those clients are wired to the shared encrypted vault and verified on their OSes.
   </p>
 
   <h2>features</h2>
@@ -114,15 +114,15 @@
     </tr>
     <tr>
       <td>macOS</td>
-      <td>SwiftUI native source is present, but it is not release-ready until it is wired to the shared vault and verified on macOS/Xcode.</td>
+      <td>SwiftUI native source is present, but not claimed as working until it is wired to the shared vault and verified on macOS/Xcode.</td>
     </tr>
     <tr>
       <td>Linux</td>
-      <td>GTK 4 native source is present, but it is not release-ready until it is wired to the shared vault and verified on a Linux GTK toolchain.</td>
+      <td>GTK 4 native source is present, but not claimed as working until it is wired to the shared vault and verified on a Linux GTK toolchain.</td>
     </tr>
     <tr>
       <td>Sync</td>
-      <td>The record model has stable IDs and timestamps for future sync. E2E sync transport is not connected yet.</td>
+      <td>The data model is sync-shaped with stable IDs and timestamps. E2E sync transport is not implemented.</td>
     </tr>
   </table>
 
@@ -134,8 +134,9 @@ shush add OPENAI_API_KEY sk-... --workspace my-app --env Dev
 shush list --workspace my-app --env Dev --search openai
 shush get OPENAI_API_KEY --workspace my-app --env Dev
 shush update OPENAI_API_KEY --workspace my-app --env Dev --value sk-new...
-shush copy OPENAI_API_KEY
-shush import .env --workspace my-app --env Dev
+shush copy OPENAI_API_KEY --workspace my-app --env Dev
+shush import .env --workspace my-app --env Dev --preview
+shush import .env --workspace my-app --env Dev --conflict overwrite
 shush export --workspace my-app --env Dev
 shush delete OPENAI_API_KEY --workspace my-app --env Dev</code></pre>
 

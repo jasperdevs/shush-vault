@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use arboard::Clipboard;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use shush_vault_core::{EncryptedVault, SecretRecord, Vault, decrypt_vault, encrypt_vault};
 
 #[derive(Parser)]
@@ -77,6 +77,10 @@ enum Command {
         env: String,
         #[arg(long, default_value = "")]
         provider: String,
+        #[arg(long, default_value = "skip")]
+        conflict: ConflictMode,
+        #[arg(long)]
+        preview: bool,
     },
     Export {
         #[arg(long)]
@@ -86,7 +90,18 @@ enum Command {
     },
     Copy {
         key: String,
+        #[arg(long)]
+        workspace: Option<String>,
+        #[arg(long)]
+        env: Option<String>,
     },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ConflictMode {
+    Skip,
+    Overwrite,
+    Rename,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -194,10 +209,61 @@ fn main() -> anyhow::Result<()> {
             workspace,
             env,
             provider,
+            conflict,
+            preview,
         } => {
             let mut vault = load_vault(&path, &passphrase)?;
             let content = fs::read_to_string(env_path)?;
-            for (key, value) in parse_env(&content) {
+            let items = preview_env(&content);
+
+            if preview {
+                for item in items {
+                    println!(
+                        "{}\t{}\t{}",
+                        item.line,
+                        item.key.as_deref().unwrap_or("-"),
+                        item.status
+                    );
+                }
+                return Ok(());
+            }
+
+            let mut imported = 0;
+            let mut skipped = 0;
+            for item in items {
+                if item.status != "ready" {
+                    skipped += 1;
+                    continue;
+                }
+
+                let key = item.key.expect("ready item has key");
+                let value = item.value.expect("ready item has value");
+                let existing = vault.find(&key, Some(&workspace), Some(&env)).is_some();
+
+                if existing && matches!(conflict, ConflictMode::Skip) {
+                    skipped += 1;
+                    continue;
+                }
+
+                if existing && matches!(conflict, ConflictMode::Overwrite) {
+                    vault.update(
+                        &key,
+                        Some(&workspace),
+                        Some(&env),
+                        Some(&value),
+                        Some(&provider),
+                        None,
+                    );
+                    imported += 1;
+                    continue;
+                }
+
+                let key = if existing {
+                    format!("{key}_{}", chrono::Utc::now().format("%Y%m%d%H%M%S"))
+                } else {
+                    key
+                };
+
                 vault.add(SecretRecord::create(
                     &workspace,
                     &key,
@@ -206,9 +272,10 @@ fn main() -> anyhow::Result<()> {
                     &provider,
                     ".env import",
                 ));
+                imported += 1;
             }
             save_vault(&path, &passphrase, &vault)?;
-            println!("imported .env entries");
+            println!("imported {imported}, skipped {skipped}");
         }
         Command::Export { workspace, env } => {
             let vault = load_vault(&path, &passphrase)?;
@@ -221,9 +288,13 @@ fn main() -> anyhow::Result<()> {
                 println!("{}={}", record.name, quote_if_needed(&record.value));
             }
         }
-        Command::Copy { key } => {
+        Command::Copy {
+            key,
+            workspace,
+            env,
+        } => {
             let vault = load_vault(&path, &passphrase)?;
-            let Some(record) = vault.find(&key, None, None) else {
+            let Some(record) = vault.find(&key, workspace.as_deref(), env.as_deref()) else {
                 anyhow::bail!("secret not found");
             };
             Clipboard::new()?.set_text(record.value.clone())?;
@@ -280,15 +351,46 @@ fn filtered<'a>(
     })
 }
 
-fn parse_env(content: &str) -> impl Iterator<Item = (String, String)> + '_ {
-    content.lines().filter_map(|line| {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            return None;
-        }
-        let (key, value) = line.split_once('=')?;
-        Some((key.trim().to_owned(), unquote(value.trim()).to_owned()))
-    })
+struct EnvPreviewItem {
+    line: usize,
+    key: Option<String>,
+    value: Option<String>,
+    status: &'static str,
+}
+
+fn preview_env(content: &str) -> Vec<EnvPreviewItem> {
+    content
+        .lines()
+        .enumerate()
+        .map(|(index, line)| {
+            let line_number = index + 1;
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return EnvPreviewItem {
+                    line: line_number,
+                    key: None,
+                    value: None,
+                    status: "ignored",
+                };
+            }
+
+            let Some((key, value)) = line.split_once('=') else {
+                return EnvPreviewItem {
+                    line: line_number,
+                    key: None,
+                    value: None,
+                    status: "invalid",
+                };
+            };
+
+            EnvPreviewItem {
+                line: line_number,
+                key: Some(key.trim().to_owned()),
+                value: Some(unquote(value.trim()).to_owned()),
+                status: "ready",
+            }
+        })
+        .collect()
 }
 
 fn unquote(value: &str) -> &str {
