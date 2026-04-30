@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.png" alt="api vault logo" width="128" />
+  <img src="assets/api-vault-logo.png" alt="api vault logo" width="128" />
 
   <h1>api vault</h1>
 
