@@ -46,9 +46,24 @@ jobs:
       - name: Stage installer artifacts
         shell: pwsh
         run: |
+          $version = "${{ needs.resolve-version.outputs.version }}"
           New-Item -ItemType Directory -Force -Path artifacts/upload | Out-Null
-          Copy-Item artifacts/velopack/Setup.exe artifacts/upload/ShushVault-${{ needs.resolve-version.outputs.version }}-Setup.exe -ErrorAction SilentlyContinue
-          Copy-Item artifacts/velopack/*.nupkg artifacts/upload/ -ErrorAction SilentlyContinue
+          $setup = Get-ChildItem artifacts/velopack -Filter "*Setup.exe" | Select-Object -First 1
+          if ($setup) {
+            Copy-Item $setup.FullName "artifacts/upload/ShushVault-$version-Setup.exe"
+          } else {
+            Write-Error "No Setup.exe found in artifacts/velopack"
+            exit 1
+          }
+          $portable = Get-ChildItem artifacts/velopack -Filter "*Portable.zip" | Select-Object -First 1
+          if ($portable) {
+            Copy-Item $portable.FullName "artifacts/upload/ShushVault-$version-Portable.zip"
+          }
+          $fullPkg = Get-ChildItem artifacts/velopack -Filter "ShushVault-$version-full.nupkg" | Select-Object -First 1
+          if ($fullPkg) {
+            Copy-Item $fullPkg.FullName artifacts/upload/
+          }
+          Get-ChildItem artifacts/upload
       - uses: actions/upload-artifact@v4
         with:
           name: windows
