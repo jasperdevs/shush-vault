@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -8,7 +10,7 @@ using Windows.ApplicationModel.DataTransfer;
 
 namespace ShushVault.Windows.Views
 {
-    public partial class MainPage : Page
+    public partial class MainPage : Page, INotifyPropertyChanged
     {
         private readonly VaultService vaultService = new();
         private readonly PlatformUnlockService platformUnlockService = new();
@@ -20,14 +22,17 @@ namespace ShushVault.Windows.Views
         private string secretEnvironment = "Dev";
         private string importEnvironment = "Dev";
         private int clipboardClearSeconds = 30;
+        private bool refreshingWorkspaces;
 
         public ObservableCollection<SecretListItem> Secrets { get; } = [];
         public ObservableCollection<ImportPreviewListItem> ImportPreview { get; } = [];
+        public Visibility SecretsListVisibility => Secrets.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        public event PropertyChangedEventHandler? PropertyChanged;
 
         public MainPage()
         {
             this.InitializeComponent();
-            App.MainWindow.SetTitleBar(TitleBarDragRegion);
+            App.MainWindow.SetTitleBar(TitleBar);
             vaultService.Unlock(platformUnlockService.GetOrCreateDevicePassphrase());
             _ = LoadSecretsAsync();
         }
@@ -49,10 +54,15 @@ namespace ShushVault.Windows.Views
 
         private void OnSettingsClicked(object sender, RoutedEventArgs e)
         {
-            settingsWindow ??= new SettingsWindow(
-                vaultService.FilePath,
-                clipboardClearSeconds,
-                seconds => clipboardClearSeconds = seconds);
+            if (settingsWindow is null)
+            {
+                settingsWindow = new SettingsWindow(
+                    vaultService.FilePath,
+                    clipboardClearSeconds,
+                    seconds => clipboardClearSeconds = seconds);
+                settingsWindow.Closed += (_, _) => settingsWindow = null;
+            }
+
             settingsWindow.Activate();
         }
 
@@ -81,6 +91,17 @@ namespace ShushVault.Windows.Views
             NewWorkspaceBox.Text = string.Empty;
             ShowDialog(WorkspaceDialog);
             NewWorkspaceBox.Focus(FocusState.Programmatic);
+        }
+
+        private void OnWorkspaceSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (refreshingWorkspaces || SelectedWorkspace(WorkspaceBox) != "Add workspace...")
+            {
+                return;
+            }
+
+            SelectComboValue(WorkspaceBox, "Default");
+            OnAddWorkspaceClicked(sender, new RoutedEventArgs());
         }
 
         private void OnCancelWorkspaceClicked(object sender, RoutedEventArgs e)
@@ -278,8 +299,10 @@ namespace ShushVault.Windows.Views
 
             SetSelectionActions(false);
             ExportButton.IsEnabled = Secrets.Count > 0;
+            EmptyState.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            OnPropertyChanged(nameof(SecretsListVisibility));
             StatusText.Text = filtered.Count == 0
-                ? "No secrets yet."
+                ? string.Empty
                 : $"{filtered.Count} secret{(filtered.Count == 1 ? string.Empty : "s")} shown.";
         }
 
@@ -333,6 +356,7 @@ namespace ShushVault.Windows.Views
             CopyButton.IsEnabled = hasSelection;
             DeleteButton.IsEnabled = hasSelection;
             ExportButton.IsEnabled = Secrets.Count > 0;
+            ActionBar.Visibility = hasSelection || Secrets.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void RefreshWorkspaceChoices()
@@ -351,8 +375,16 @@ namespace ShushVault.Windows.Views
 
         private void RefreshWorkspaceCombos(string selected)
         {
-            ReplaceComboItems(WorkspaceBox, [.. workspaces, "Add workspace..."], selected);
-            ReplaceComboItems(ImportWorkspaceBox, workspaces, selected);
+            refreshingWorkspaces = true;
+            try
+            {
+                ReplaceComboItems(WorkspaceBox, [.. workspaces, "Add workspace..."], selected);
+                ReplaceComboItems(ImportWorkspaceBox, workspaces, selected);
+            }
+            finally
+            {
+                refreshingWorkspaces = false;
+            }
         }
 
         private static void ReplaceComboItems(ComboBox comboBox, IReadOnlyList<string> values, string selected)
@@ -385,8 +417,7 @@ namespace ShushVault.Windows.Views
 
         private static string SelectedWorkspace(ComboBox comboBox)
         {
-            var value = (comboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Default";
-            return value == "Add workspace..." ? "Default" : value;
+            return (comboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Default";
         }
 
         private ImportConflictMode SelectedConflictMode()
@@ -422,6 +453,9 @@ namespace ShushVault.Windows.Views
             => clearSeconds > 0
                 ? $"{prefix} Clipboard clears in {clearSeconds}s."
                 : $"{prefix} Clipboard auto-clear is off.";
+
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
     public sealed class SecretListItem

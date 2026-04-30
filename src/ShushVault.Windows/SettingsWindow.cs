@@ -1,5 +1,6 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml.Controls;
+using ShushVault.Windows.Controls;
 using WinRT.Interop;
 
 namespace ShushVault.Windows;
@@ -11,46 +12,61 @@ public sealed class SettingsWindow : Window
     public SettingsWindow(string vaultPath, int clipboardSeconds, Action<int> onClipboardSecondsChanged)
     {
         this.onClipboardSecondsChanged = onClipboardSecondsChanged;
+        ExtendsContentIntoTitleBar = true;
         Title = "Shush Vault Settings";
-        Content = BuildContent(vaultPath, clipboardSeconds);
-        Resize(560, 420);
+        var (root, titleBar) = BuildContent(vaultPath, clipboardSeconds);
+        Content = root;
+        SetTitleBar(titleBar);
+        Resize(520, 380);
     }
 
-    private UIElement BuildContent(string vaultPath, int clipboardSeconds)
+    private (UIElement Root, UIElement TitleBar) BuildContent(string vaultPath, int clipboardSeconds)
     {
-        var root = new StackPanel
+        var root = new Grid
         {
-            Padding = new Thickness(22),
-            Spacing = 16
+            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"]
         };
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(44) });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        root.Children.Add(new TextBlock
+        var titleBar = new WindowTitleBar { Title = "settings" };
+        root.Children.Add(titleBar);
+
+        var content = new StackPanel
+        {
+            Padding = new Thickness(22, 18, 22, 22),
+            Spacing = 14
+        };
+        Grid.SetRow(content, 1);
+        root.Children.Add(content);
+
+        content.Children.Add(new TextBlock
         {
             Text = "Settings",
-            FontSize = 22,
+            FontSize = 20,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
         });
 
-        root.Children.Add(new TextBlock
+        content.Children.Add(new TextBlock
         {
             Text = "Vault",
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
         });
-        root.Children.Add(new TextBlock
+        content.Children.Add(new TextBlock
         {
             Text = vaultPath,
             TextTrimming = TextTrimming.CharacterEllipsis,
             Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
         });
 
-        root.Children.Add(new TextBlock
+        content.Children.Add(new TextBlock
         {
             Text = "Passphrase is optional. By default, this Windows device stores a generated local key in Credential Manager and the vault file stays encrypted on disk.",
             TextWrapping = TextWrapping.Wrap,
             Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
         });
 
-        root.Children.Add(new TextBlock
+        content.Children.Add(new TextBlock
         {
             Text = "Clipboard",
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
@@ -80,7 +96,7 @@ public sealed class SettingsWindow : Window
                 this.onClipboardSecondsChanged(seconds);
             }
         };
-        root.Children.Add(clipboardBox);
+        content.Children.Add(clipboardBox);
 
         var close = new Button
         {
@@ -88,9 +104,9 @@ public sealed class SettingsWindow : Window
             HorizontalAlignment = HorizontalAlignment.Right
         };
         close.Click += (_, _) => Close();
-        root.Children.Add(close);
+        content.Children.Add(close);
 
-        return root;
+        return (root, titleBar);
     }
 
     private static void AddClipboardItem(ComboBox comboBox, string label, int seconds)

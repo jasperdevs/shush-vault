@@ -30,6 +30,9 @@
                 <Setter Property="Padding"
                         Value="14,10" />
             </Style>
+
+            <SolidColorBrush x:Key="ModalSurfaceBrush" Color="#1F1F1F" />
+            <SolidColorBrush x:Key="ModalBorderBrush" Color="#3A3A3A" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

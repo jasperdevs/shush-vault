@@ -15,7 +15,7 @@
   <mp:PhoneIdentity PhoneProductId="ce02b5bf-ee7b-4e9e-9860-1ba2badcb42d" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
-    <DisplayName>ShushVault.Windows</DisplayName>
+    <DisplayName>Shush Vault</DisplayName>
     <PublisherDisplayName>User Name</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -34,8 +34,8 @@
       Executable="$targetnametoken$.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="ShushVault.Windows"
-        Description="ShushVault.Windows"
+        DisplayName="Shush Vault"
+        Description="Encrypted local API key manager"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
