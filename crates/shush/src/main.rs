@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
@@ -9,29 +10,60 @@ use shush_vault_core::{EncryptedVault, SecretRecord, Vault, decrypt_vault, encry
 use zeroize::Zeroizing;
 
 #[derive(Parser)]
-#[command(name = "shush")]
-#[command(about = "local secrets, kept quiet")]
+#[command(
+    name = "shush",
+    about = "Local secrets, kept quiet.",
+    long_about = "shush is an offline, encrypted vault for API keys and other secrets.\n\
+                  Everything is stored in a single file with AES-256-GCM and PBKDF2-SHA256.\n\
+                  Run `shush init` once, then add, list, or copy values.",
+    version
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
 
-    #[arg(long, global = true)]
+    #[arg(
+        long,
+        global = true,
+        help = "Path to the vault file (defaults to your local data directory)."
+    )]
     vault: Option<PathBuf>,
 
     #[arg(
         long,
         global = true,
         env = "SHUSH_VAULT_PASSPHRASE",
-        help = "Automation path; prefer the hidden interactive prompt for normal use"
+        help = "Vault passphrase. Prefer the hidden interactive prompt for everyday use."
     )]
     passphrase: Option<String>,
+
+    #[arg(
+        long,
+        global = true,
+        help = "Disable colored output even when writing to a terminal."
+    )]
+    no_color: bool,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    Init,
+    /// Create a fresh, empty vault.
+    #[command(alias = "new")]
+    Init {
+        /// Overwrite an existing vault file. Existing secrets cannot be recovered.
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Print the absolute path of the vault file.
+    Path,
+
+    /// Add a new secret.
+    #[command(alias = "set")]
     Add {
+        /// Secret key (e.g. OPENAI_API_KEY).
         key: String,
+        /// Secret value.
         value: String,
         #[arg(long, default_value = "Default")]
         workspace: String,
@@ -42,6 +74,9 @@ enum Command {
         #[arg(long, default_value = "")]
         notes: String,
     },
+
+    /// List secrets in the vault.
+    #[command(alias = "ls")]
     List {
         #[arg(long)]
         workspace: Option<String>,
@@ -49,7 +84,13 @@ enum Command {
         env: Option<String>,
         #[arg(long)]
         search: Option<String>,
+        /// Emit the listing as JSON instead of a table.
+        #[arg(long)]
+        json: bool,
     },
+
+    /// Reveal a secret's value to stdout.
+    #[command(alias = "show")]
     Get {
         key: String,
         #[arg(long)]
@@ -57,6 +98,8 @@ enum Command {
         #[arg(long)]
         env: Option<String>,
     },
+
+    /// Update an existing secret.
     Update {
         key: String,
         #[arg(long)]
@@ -70,13 +113,21 @@ enum Command {
         #[arg(long)]
         notes: Option<String>,
     },
+
+    /// Remove a secret.
+    #[command(alias = "rm", alias = "remove")]
     Delete {
         key: String,
         #[arg(long)]
         workspace: Option<String>,
         #[arg(long)]
         env: Option<String>,
+        /// Skip the confirmation prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
     },
+
+    /// Import KEY=value lines from a .env file.
     Import {
         path: PathBuf,
         #[arg(long, default_value = "Default")]
@@ -87,9 +138,12 @@ enum Command {
         provider: String,
         #[arg(long, default_value = "skip")]
         conflict: ConflictMode,
+        /// Print what would be imported without modifying the vault.
         #[arg(long)]
         preview: bool,
     },
+
+    /// Export visible secrets as a .env-style payload.
     Export {
         #[arg(long)]
         workspace: Option<String>,
@@ -97,15 +151,20 @@ enum Command {
         env: Option<String>,
         #[arg(long)]
         output: Option<PathBuf>,
+        /// Print the payload to stdout (writes plaintext, so use with care).
         #[arg(long)]
         stdout: bool,
     },
+
+    /// Copy a secret to the clipboard, then clear it.
+    #[command(alias = "cp")]
     Copy {
         key: String,
         #[arg(long)]
         workspace: Option<String>,
         #[arg(long)]
         env: Option<String>,
+        /// Seconds before the clipboard is wiped. Pass 0 to keep it.
         #[arg(long, default_value_t = 30)]
         clear_after: u64,
     },
@@ -120,14 +179,43 @@ enum ConflictMode {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let theme = Theme::from_env(cli.no_color);
     let path = cli.vault.unwrap_or_else(default_vault_path);
-    let passphrase = resolve_passphrase(cli.passphrase)?;
 
-    match cli.command {
-        Command::Init => {
-            save_vault(&path, passphrase.as_str(), &Vault::default())?;
-            println!("initialized {}", path.display());
+    if let Err(error) = run(cli.command, cli.passphrase, &path, &theme) {
+        eprintln!("{} {error}", theme.error("error:"));
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+fn run(
+    command: Command,
+    passphrase_arg: Option<String>,
+    path: &PathBuf,
+    theme: &Theme,
+) -> anyhow::Result<()> {
+    match command {
+        Command::Init { force } => {
+            if path.exists() && !force {
+                anyhow::bail!(
+                    "{} already exists; pass --force to overwrite",
+                    path.display()
+                );
+            }
+            let passphrase = resolve_passphrase(passphrase_arg, true)?;
+            save_vault(path, passphrase.as_str(), &Vault::default())?;
+            println!(
+                "{} initialized vault at {}",
+                theme.success("✓"),
+                theme.dim(&path.display().to_string())
+            );
         }
+
+        Command::Path => {
+            println!("{}", path.display());
+        }
+
         Command::Add {
             key,
             value,
@@ -136,45 +224,58 @@ fn main() -> anyhow::Result<()> {
             provider,
             notes,
         } => {
-            let mut vault = load_vault(&path, passphrase.as_str())?;
+            let passphrase = resolve_passphrase(passphrase_arg, false)?;
+            let mut vault = load_vault(path, passphrase.as_str())?;
             vault.add(SecretRecord::create(
                 &workspace, &key, &value, &env, &provider, &notes,
             ));
-            save_vault(&path, passphrase.as_str(), &vault)?;
-            println!("saved {key}");
+            save_vault(path, passphrase.as_str(), &vault)?;
+            println!(
+                "{} saved {} {}",
+                theme.success("✓"),
+                theme.key(&key),
+                theme.dim(&format!("({workspace} · {env})"))
+            );
         }
+
         Command::List {
             workspace,
             env,
             search,
+            json,
         } => {
-            let vault = load_vault(&path, passphrase.as_str())?;
-            for record in filtered(
+            let passphrase = resolve_passphrase(passphrase_arg, false)?;
+            let vault = load_vault(path, passphrase.as_str())?;
+            let visible: Vec<&SecretRecord> = filtered(
                 vault.visible_records(),
                 workspace.as_deref(),
                 env.as_deref(),
                 search.as_deref(),
-            ) {
-                println!(
-                    "{}\t{}\t{}\t{}",
-                    record.workspace,
-                    record.environment,
-                    record.name,
-                    mask(&record.value)
-                );
+            )
+            .collect();
+
+            if json {
+                print_list_json(&visible)?;
+            } else if visible.is_empty() {
+                println!("{}", theme.dim("no secrets match those filters"));
+            } else {
+                print_list_table(&visible, theme);
             }
         }
+
         Command::Get {
             key,
             workspace,
             env,
         } => {
-            let vault = load_vault(&path, passphrase.as_str())?;
-            let Some(record) = vault.find(&key, workspace.as_deref(), env.as_deref()) else {
-                anyhow::bail!("secret not found");
-            };
+            let passphrase = resolve_passphrase(passphrase_arg, false)?;
+            let vault = load_vault(path, passphrase.as_str())?;
+            let record = vault
+                .find(&key, workspace.as_deref(), env.as_deref())
+                .ok_or_else(|| not_found_error(&key, workspace.as_deref(), env.as_deref()))?;
             println!("{}", record.value);
         }
+
         Command::Update {
             key,
             value,
@@ -184,10 +285,11 @@ fn main() -> anyhow::Result<()> {
             notes,
         } => {
             if value.is_none() && provider.is_none() && notes.is_none() {
-                anyhow::bail!("pass --value, --provider, or --notes");
+                anyhow::bail!("nothing to update; pass --value, --provider, or --notes");
             }
 
-            let mut vault = load_vault(&path, passphrase.as_str())?;
+            let passphrase = resolve_passphrase(passphrase_arg, false)?;
+            let mut vault = load_vault(path, passphrase.as_str())?;
             if !vault.update(
                 &key,
                 workspace.as_deref(),
@@ -196,25 +298,42 @@ fn main() -> anyhow::Result<()> {
                 provider.as_deref(),
                 notes.as_deref(),
             ) {
-                anyhow::bail!("secret not found");
+                anyhow::bail!(not_found_error(
+                    &key,
+                    workspace.as_deref(),
+                    env.as_deref()
+                ));
             }
 
-            save_vault(&path, passphrase.as_str(), &vault)?;
-            println!("updated {key}");
+            save_vault(path, passphrase.as_str(), &vault)?;
+            println!("{} updated {}", theme.success("✓"), theme.key(&key));
         }
+
         Command::Delete {
             key,
             workspace,
             env,
+            yes,
         } => {
-            let mut vault = load_vault(&path, passphrase.as_str())?;
-            if !vault.delete(&key, workspace.as_deref(), env.as_deref()) {
-                anyhow::bail!("secret not found");
+            if !yes && !confirm(&format!("Delete {key}?"))? {
+                println!("{}", theme.dim("aborted"));
+                return Ok(());
             }
 
-            save_vault(&path, passphrase.as_str(), &vault)?;
-            println!("deleted {key}");
+            let passphrase = resolve_passphrase(passphrase_arg, false)?;
+            let mut vault = load_vault(path, passphrase.as_str())?;
+            if !vault.delete(&key, workspace.as_deref(), env.as_deref()) {
+                anyhow::bail!(not_found_error(
+                    &key,
+                    workspace.as_deref(),
+                    env.as_deref()
+                ));
+            }
+
+            save_vault(path, passphrase.as_str(), &vault)?;
+            println!("{} deleted {}", theme.success("✓"), theme.key(&key));
         }
+
         Command::Import {
             path: env_path,
             workspace,
@@ -223,28 +342,38 @@ fn main() -> anyhow::Result<()> {
             conflict,
             preview,
         } => {
-            let mut vault = load_vault(&path, passphrase.as_str())?;
-            let content = fs::read_to_string(env_path)?;
+            let content = fs::read_to_string(&env_path)
+                .map_err(|e| anyhow::anyhow!("could not read {}: {e}", env_path.display()))?;
             let items = preview_env(&content);
 
             if preview {
                 for item in items {
+                    let key = item.key.as_deref().unwrap_or("-");
+                    let line = format!("{:>4}", item.line);
                     println!(
-                        "{}\t{}\t{}",
-                        item.line,
-                        item.key.as_deref().unwrap_or("-"),
-                        item.status
+                        "{}  {}  {}",
+                        theme.dim(&line),
+                        theme.status(item.status),
+                        theme.key(key)
                     );
                 }
                 return Ok(());
             }
 
+            let passphrase = resolve_passphrase(passphrase_arg, false)?;
+            let mut vault = load_vault(path, passphrase.as_str())?;
             let mut imported = 0;
             let mut skipped = 0;
+            let mut invalid = 0;
             for item in items {
-                if item.status != "ready" {
-                    skipped += 1;
-                    continue;
+                match item.status {
+                    "ignored" => continue,
+                    "invalid" => {
+                        invalid += 1;
+                        continue;
+                    }
+                    "ready" => {}
+                    _ => continue,
                 }
 
                 let key = item.key.expect("ready item has key");
@@ -285,9 +414,16 @@ fn main() -> anyhow::Result<()> {
                 ));
                 imported += 1;
             }
-            save_vault(&path, passphrase.as_str(), &vault)?;
-            println!("imported {imported}, skipped {skipped}");
+            save_vault(path, passphrase.as_str(), &vault)?;
+            println!(
+                "{} imported {imported} {} {} skipped, {} invalid",
+                theme.success("✓"),
+                theme.dim("·"),
+                skipped,
+                invalid
+            );
         }
+
         Command::Export {
             workspace,
             env,
@@ -295,10 +431,13 @@ fn main() -> anyhow::Result<()> {
             stdout,
         } => {
             if output.is_none() && !stdout {
-                anyhow::bail!("export writes plaintext; pass --stdout or --output <path>");
+                anyhow::bail!(
+                    "export writes plaintext; pass --stdout or --output <path>"
+                );
             }
 
-            let vault = load_vault(&path, passphrase.as_str())?;
+            let passphrase = resolve_passphrase(passphrase_arg, false)?;
+            let vault = load_vault(path, passphrase.as_str())?;
             let content = filtered(
                 vault.visible_records(),
                 workspace.as_deref(),
@@ -314,38 +453,145 @@ fn main() -> anyhow::Result<()> {
             }
 
             if let Some(output) = output {
-                fs::write(output, content)?;
+                fs::write(&output, &content)?;
+                eprintln!(
+                    "{} wrote {} bytes to {}",
+                    theme.success("✓"),
+                    content.len(),
+                    theme.dim(&output.display().to_string())
+                );
             }
         }
+
         Command::Copy {
             key,
             workspace,
             env,
             clear_after,
         } => {
-            let vault = load_vault(&path, passphrase.as_str())?;
-            let Some(record) = vault.find(&key, workspace.as_deref(), env.as_deref()) else {
-                anyhow::bail!("secret not found");
-            };
+            let passphrase = resolve_passphrase(passphrase_arg, false)?;
+            let vault = load_vault(path, passphrase.as_str())?;
+            let record = vault
+                .find(&key, workspace.as_deref(), env.as_deref())
+                .ok_or_else(|| not_found_error(&key, workspace.as_deref(), env.as_deref()))?;
             let copied_value = record.value.clone();
             let mut clipboard = Clipboard::new()?;
             clipboard.set_text(copied_value.clone())?;
             if clear_after == 0 {
-                println!("copied {}", record.name);
+                println!(
+                    "{} copied {}",
+                    theme.success("✓"),
+                    theme.key(&record.name)
+                );
             } else {
                 println!(
-                    "copied {}; clearing clipboard in {clear_after}s",
-                    record.name
+                    "{} copied {} {}",
+                    theme.success("✓"),
+                    theme.key(&record.name),
+                    theme.dim(&format!("(clearing in {clear_after}s)"))
                 );
                 thread::sleep(Duration::from_secs(clear_after));
                 if clipboard.get_text().is_ok_and(|text| text == copied_value) {
                     clipboard.set_text(String::new())?;
-                    println!("cleared clipboard");
+                    eprintln!("{} cleared clipboard", theme.dim("·"));
                 }
             }
         }
     }
 
+    Ok(())
+}
+
+fn confirm(prompt: &str) -> anyhow::Result<bool> {
+    if !std::io::stdin().is_terminal() {
+        return Ok(false);
+    }
+    print!("{prompt} [y/N] ");
+    std::io::stdout().flush()?;
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer)?;
+    Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "YES"))
+}
+
+fn not_found_error(key: &str, workspace: Option<&str>, env: Option<&str>) -> anyhow::Error {
+    let mut detail = format!("no secret named {key}");
+    if let Some(workspace) = workspace {
+        detail.push_str(&format!(" in workspace {workspace}"));
+    }
+    if let Some(env) = env {
+        detail.push_str(&format!(" / env {env}"));
+    }
+    anyhow::anyhow!(detail)
+}
+
+fn print_list_table(records: &[&SecretRecord], theme: &Theme) {
+    let env_width = records
+        .iter()
+        .map(|r| r.environment.len())
+        .max()
+        .unwrap_or(3)
+        .max(3);
+    let workspace_width = records
+        .iter()
+        .map(|r| r.workspace.len())
+        .max()
+        .unwrap_or(9)
+        .max(9);
+    let key_width = records
+        .iter()
+        .map(|r| r.name.len())
+        .max()
+        .unwrap_or(3)
+        .max(3);
+
+    let header = format!(
+        "{:env_width$}  {:workspace_width$}  {:key_width$}  {}",
+        "ENV",
+        "WORKSPACE",
+        "KEY",
+        "VALUE",
+        env_width = env_width,
+        workspace_width = workspace_width,
+        key_width = key_width,
+    );
+    println!("{}", theme.header(&header));
+
+    for record in records {
+        let env = format!("{:env_width$}", record.environment, env_width = env_width);
+        let workspace = format!(
+            "{:workspace_width$}",
+            record.workspace,
+            workspace_width = workspace_width
+        );
+        let name = format!("{:key_width$}", record.name, key_width = key_width);
+        println!(
+            "{}  {}  {}  {}",
+            theme.env(&record.environment, &env),
+            workspace,
+            theme.key(&name),
+            theme.dim(&mask(&record.value))
+        );
+    }
+}
+
+fn print_list_json(records: &[&SecretRecord]) -> anyhow::Result<()> {
+    let serializable: Vec<serde_json::Value> = records
+        .iter()
+        .map(|record| {
+            serde_json::json!({
+                "id": record.id.to_string(),
+                "workspace": record.workspace,
+                "key": record.name,
+                "environment": record.environment,
+                "provider": record.provider,
+                "notes": record.notes,
+                "masked": mask(&record.value),
+                "createdAt": record.created_at.to_rfc3339(),
+                "updatedAt": record.updated_at.to_rfc3339(),
+            })
+        })
+        .collect();
+    println!("{}", serde_json::to_string_pretty(&serializable)?);
     Ok(())
 }
 
@@ -356,23 +602,37 @@ fn default_vault_path() -> PathBuf {
         .join("vault.shush")
 }
 
-fn resolve_passphrase(passphrase: Option<String>) -> anyhow::Result<Zeroizing<String>> {
+fn resolve_passphrase(
+    passphrase: Option<String>,
+    confirm: bool,
+) -> anyhow::Result<Zeroizing<String>> {
     if let Some(passphrase) = passphrase.filter(|value| !value.is_empty()) {
         return Ok(Zeroizing::new(passphrase));
     }
 
-    Ok(Zeroizing::new(rpassword::prompt_password(
-        "Vault passphrase: ",
-    )?))
+    let entered = Zeroizing::new(rpassword::prompt_password("Vault passphrase: ")?);
+    if confirm {
+        let confirmed = Zeroizing::new(rpassword::prompt_password("Confirm passphrase: ")?);
+        if confirmed.as_str() != entered.as_str() {
+            anyhow::bail!("passphrases do not match");
+        }
+    }
+    Ok(entered)
 }
 
 fn load_vault(path: &PathBuf, passphrase: &str) -> anyhow::Result<Vault> {
     if !path.exists() {
-        return Ok(Vault::default());
+        anyhow::bail!(
+            "no vault at {}; run `shush init` to create one",
+            path.display()
+        );
     }
 
-    let encrypted: EncryptedVault = serde_json::from_slice(&fs::read(path)?)?;
-    Ok(decrypt_vault(&encrypted, passphrase)?)
+    let bytes = fs::read(path)
+        .map_err(|e| anyhow::anyhow!("could not read {}: {e}", path.display()))?;
+    let encrypted: EncryptedVault = serde_json::from_slice(&bytes)
+        .map_err(|e| anyhow::anyhow!("vault file is not valid: {e}"))?;
+    decrypt_vault(&encrypted, passphrase).map_err(|_| anyhow::anyhow!("wrong passphrase"))
 }
 
 fn save_vault(path: &PathBuf, passphrase: &str, vault: &Vault) -> anyhow::Result<()> {
@@ -516,5 +776,64 @@ fn mask(value: &str) -> String {
         "•".repeat(value.len().max(1))
     } else {
         format!("{}{}", "•".repeat(8), &value[value.len() - 4..])
+    }
+}
+
+struct Theme {
+    enabled: bool,
+}
+
+impl Theme {
+    fn from_env(no_color: bool) -> Self {
+        let enabled = !no_color
+            && std::env::var_os("NO_COLOR").is_none()
+            && std::io::stdout().is_terminal();
+        Self { enabled }
+    }
+
+    fn paint(&self, value: &str, code: &str) -> String {
+        if self.enabled {
+            format!("\u{1b}[{code}m{value}\u{1b}[0m")
+        } else {
+            value.to_owned()
+        }
+    }
+
+    fn success(&self, value: &str) -> String {
+        self.paint(value, "32") // green
+    }
+    fn error(&self, value: &str) -> String {
+        self.paint(value, "1;31") // bold red
+    }
+    fn key(&self, value: &str) -> String {
+        self.paint(value, "1;36") // bold cyan
+    }
+    fn dim(&self, value: &str) -> String {
+        self.paint(value, "2") // dim
+    }
+    fn header(&self, value: &str) -> String {
+        self.paint(value, "2;1") // dim+bold for column headers
+    }
+    fn env(&self, environment: &str, padded: &str) -> String {
+        let code = match environment {
+            "Dev" => "36",      // cyan
+            "Staging" => "33",  // yellow
+            "Prod" => "31",     // red
+            _ => "0",
+        };
+        if self.enabled && code != "0" {
+            self.paint(padded, code)
+        } else {
+            padded.to_owned()
+        }
+    }
+    fn status(&self, value: &str) -> String {
+        let code = match value {
+            "ready" => "32",
+            "ignored" => "2",
+            "invalid" => "31",
+            _ => "33",
+        };
+        self.paint(value, code)
     }
 }

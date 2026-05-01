@@ -30,7 +30,12 @@ pub struct SecretRecord {
     pub notes: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
     pub deleted_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub website: String,
+    #[serde(default, rename = "iconBase64")]
+    pub icon_base64: String,
 }
 
 impl SecretRecord {
@@ -54,6 +59,8 @@ impl SecretRecord {
             created_at: now,
             updated_at: now,
             deleted_at: None,
+            website: String::new(),
+            icon_base64: String::new(),
         }
     }
 }

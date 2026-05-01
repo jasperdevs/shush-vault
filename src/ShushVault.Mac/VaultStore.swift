@@ -63,6 +63,19 @@ final class VaultStore: ObservableObject {
     init(fileURL: URL = VaultStore.defaultVaultURL()) {
         self.fileURL = fileURL
         refreshPlatformUnlock()
+        autoUnlock()
+    }
+
+    private func autoUnlock() {
+        let pass = ""
+        passphrase = pass
+        if let loaded = try? Self.loadVault(fileURL: fileURL, passphrase: pass) {
+            rows = loaded
+        } else {
+            rows = []
+        }
+        isUnlocked = true
+        status = ""
     }
 
     func unlock(passphrase: String) {

@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "ShushVaultMac",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v14)
     ],
     products: [
         .executable(name: "ShushVaultMac", targets: ["ShushVaultMac"])
@@ -17,6 +17,8 @@ let package = Package(
             sources: [
                 "ShushVaultApp.swift",
                 "ContentView.swift",
+                "SecretEditorView.swift",
+                "GlassStyles.swift",
                 "PlatformUnlockStore.swift",
                 "VaultStore.swift"
             ]
