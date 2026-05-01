@@ -193,7 +193,7 @@ private struct VaultView: View {
                 Spacer(minLength: 6)
                 Text("\(count)")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(isSelected ? accent : .tertiary)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(accent) : AnyShapeStyle(HierarchicalShapeStyle.tertiary))
                     .monospacedDigit()
             }
             .padding(.horizontal, 12)
